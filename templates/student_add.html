@@ -1,0 +1,106 @@
+{% extends 'base.html' %}
+
+{% block title %}Add Student - School Management Studio{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="d-flex align-items-center mb-4">
+            <a href="{{ url_for('students_view') }}" class="btn btn-secondary btn-sm me-3 px-3">
+                <i class="fa-solid fa-arrow-left"></i> Back
+            </a>
+            <h1 class="mb-0 font-weight-bold" style="font-family: 'Outfit'; font-weight: 850;">Enroll New Student</h1>
+        </div>
+        
+        <div class="glass-panel">
+            <form action="{{ url_for('student_add') }}" method="POST">
+                <div class="row g-4">
+                    <!-- Student Name -->
+                    <div class="col-md-6">
+                        <label for="name" class="form-label">Student Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="name" name="name" placeholder="e.g. Muhammad Saad" required autofocus>
+                    </div>
+                    
+                    <!-- Father Name -->
+                    <div class="col-md-6">
+                        <label for="father_name" class="form-label">Father's Name</label>
+                        <input type="text" class="form-control" id="father_name" name="father_name" placeholder="e.g. Farooq Ahmad">
+                    </div>
+                    
+                    <!-- Class -->
+                    <div class="col-md-6">
+                        <label for="class" class="form-label">Class / Grade <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="class" name="class" placeholder="e.g. Nursery, Prep, One, Six" required>
+                        <div class="form-text text-secondary small">Case-sensitive. Keep classes consistent (e.g. "Prep", "One", "Two").</div>
+                    </div>
+                    
+                    <!-- Monthly Fee -->
+                    <div class="col-md-6">
+                        <label for="monthly_fee" class="form-label">Monthly Tuition Fee (Rs.) <span class="text-danger">*</span></label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-transparent border-end-0 border-light-subtle text-secondary" style="border: 1px solid var(--glass-border);">Rs.</span>
+                            <input type="number" step="any" class="form-control border-start-0" id="monthly_fee" name="monthly_fee" placeholder="e.g. 2600" required>
+                        </div>
+                    </div>
+                    
+                    <!-- Annual Charges -->
+                    <div class="col-md-6">
+                        <label for="annual_charges" class="form-label">Annual Charges (Rs.) <span class="text-danger">*</span></label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-transparent border-end-0 border-light-subtle text-secondary" style="border: 1px solid var(--glass-border);">Rs.</span>
+                            <input type="number" step="any" class="form-control border-start-0" id="annual_charges" name="annual_charges" placeholder="e.g. 1500" value="0" required>
+                        </div>
+                        <div class="form-text text-secondary small">Leave as 0 if not applicable.</div>
+                    </div>
+
+                    <!-- Campus Dropdown (Admins only) -->
+                    {% if session.role == 'admin' %}
+                    <div class="col-md-12">
+                        <label for="campus_id" class="form-label">Assign to Campus <span class="text-danger">*</span></label>
+                        <select class="form-select" id="campus_id" name="campus_id" required>
+                            <option value="">Select Campus...</option>
+                            {% for c in campuses_list %}
+                            <option value="{{ c.id }}" {% if c.id == active_campus_id %}selected{% endif %}>{{ c.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    {% endif %}
+                    
+                    <div class="col-12 mt-4">
+                        <h5 class="border-bottom border-light-subtle pb-2 mb-3 text-secondary small text-uppercase">Arrears Start Date</h5>
+                        <p class="text-secondary small">Billing and arrears calculation will start from the month and year specified below.</p>
+                    </div>
+                    
+                    <!-- Start Month -->
+                    <div class="col-md-6">
+                        <label for="start_month" class="form-label">Billing Start Month</label>
+                        <select class="form-select" id="start_month" name="start_month">
+                            {% for val, name in months.items() %}
+                            <option value="{{ val }}" {% if val == current_month %}selected{% endif %}>{{ name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <!-- Start Year -->
+                    <div class="col-md-6">
+                        <label for="start_year" class="form-label">Billing Start Year</label>
+                        <select class="form-select" id="start_year" name="start_year">
+                            {% for y in range(current_year - 1, current_year + 3) %}
+                            <option value="{{ y }}" {% if y == current_year %}selected{% endif %}>{{ y }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <!-- Form Actions -->
+                    <div class="col-12 text-end mt-5">
+                        <a href="{{ url_for('students_view') }}" class="btn btn-secondary me-2">Cancel</a>
+                        <button type="submit" class="btn btn-primary px-4">
+                            <i class="fa-solid fa-save me-1"></i> Save Student Record
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,73 @@
+{% extends 'base.html' %}
+
+{% block title %}Fee History - {{ student.name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center mb-4">
+    <a href="{{ url_for('students_view') }}" class="btn btn-secondary btn-sm me-3 px-3">
+        <i class="fa-solid fa-arrow-left"></i> Registry
+    </a>
+    <h1 class="mb-0 font-weight-bold" style="font-family: 'Outfit'; font-weight: 850;">Payment History</h1>
+</div>
+
+<div class="glass-panel mb-4">
+    <div class="d-flex justify-content-between align-items-center flex-wrap g-3">
+        <div>
+            <h2 class="mb-1 text-white">{{ student.name }}</h2>
+            <span class="text-secondary">Father Name: <strong>{{ student.father_name }}</strong></span>
+        </div>
+        <div class="d-flex gap-3 align-items-center">
+            <div>
+                <span class="text-secondary small d-block">Class Grade</span>
+                <span class="badge badge-class fs-6 py-2 px-3">Class {{ student.class }}</span>
+            </div>
+            <div>
+                <span class="text-secondary small d-block">Tuition Fee</span>
+                <span class="badge badge-amount fs-6 py-2 px-3">Rs. {{ "{:,.0f}".format(student.monthly_fee) }}</span>
+            </div>
+            <div>
+                <span class="text-secondary small d-block">System ID</span>
+                <span class="badge bg-secondary bg-opacity-20 text-white font-monospace fs-6 py-2 px-3">{{ student.id }}</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="glass-panel">
+    <h5 class="mb-4 text-secondary text-uppercase small">Ledger Transactions</h5>
+    
+    <div class="table-responsive">
+        <table class="table table-custom">
+            <thead>
+                <tr>
+                    <th>Receipt ID</th>
+                    <th>Billing Month</th>
+                    <th>Billing Year</th>
+                    <th>Paid Amount</th>
+                    <th>Payment Date</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if payments %}
+                    {% for p in payments %}
+                    <tr>
+                        <td class="text-secondary font-monospace">#{{ p.id }}</td>
+                        <td class="fw-bold text-white">{{ p.month }}</td>
+                        <td class="text-secondary">{{ p.year }}</td>
+                        <td><span class="badge badge-amount">Rs. {{ "{:,.0f}".format(p.paid_amount) }}</span></td>
+                        <td class="text-secondary small">{{ p.date_paid }}</td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="5" class="text-center text-secondary py-5">
+                            <i class="fa-solid fa-file-excel d-block fs-3 mb-3 text-muted"></i>
+                            No fee payments have been recorded for this student yet.
+                        </td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

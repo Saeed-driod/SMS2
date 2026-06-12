@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}SMS - Allied School Al-Rehman Campus, Okara{% endblock %}</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- FontAwesome for Premium Icons -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <!-- Custom Style Sheet -->
+    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+
+    <!-- Navigation Bar -->
+    {% if session.logged_in %}
+    <nav class="navbar navbar-expand-lg navbar-dark navbar-custom no-print">
+        <div class="container">
+            <a class="navbar-brand" href="{{ url_for('dashboard') }}">
+                <i class="fa-solid fa-graduation-cap me-2"></i>ALLIED SCHOOL
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.path == '/' %}active{% endif %}" href="{{ url_for('dashboard') }}">
+                            <i class="fa-solid fa-gauge me-1"></i> Dashboard
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if '/students' in request.path %}active{% endif %}" href="{{ url_for('students_view') }}">
+                            <i class="fa-solid fa-users me-1"></i> Students
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if '/fee/entry' in request.path %}active{% endif %}" href="{{ url_for('fee_entry') }}">
+                            <i class="fa-solid fa-receipt me-1"></i> Fee Entry
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if '/voucher' in request.path %}active{% endif %}" href="{{ url_for('voucher_generate') }}">
+                            <i class="fa-solid fa-file-invoice-dollar me-1"></i> Voucher Studio
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if '/defaulters' in request.path %}active{% endif %}" href="{{ url_for('defaulters_view') }}">
+                            <i class="fa-solid fa-user-xmark me-1"></i> Defaulters List
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if '/import' in request.path %}active{% endif %}" href="{{ url_for('import_excel_view') }}">
+                            <i class="fa-solid fa-file-excel me-1"></i> Excel Import
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if '/settings' in request.path %}active{% endif %}" href="{{ url_for('settings_view') }}">
+                            <i class="fa-solid fa-sliders me-1"></i> Settings
+                        </a>
+                    </li>
+                    {% if session.role == 'admin' %}
+                    <li class="nav-item">
+                        <a class="nav-link {% if '/campuses' in request.path %}active{% endif %}" href="{{ url_for('campuses_view') }}">
+                            <i class="fa-solid fa-school me-1"></i> Campuses
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
+                <div class="d-flex align-items-center">
+                    {% if session.role == 'admin' %}
+                    <div class="dropdown me-3">
+                        <button class="btn btn-outline-info btn-sm dropdown-toggle px-3" type="button" id="campusDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="fa-solid fa-school me-1"></i> {{ active_campus_name }}
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end shadow" aria-labelledby="campusDropdown">
+                            <li><a class="dropdown-item {% if not active_campus_id %}active{% endif %}" href="{{ url_for('switch_campus', campus_id=0) }}">All Campuses (Consolidated)</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            {% for c in campuses_list %}
+                                <li><a class="dropdown-item {% if active_campus_id == c.id %}active{% endif %}" href="{{ url_for('switch_campus', campus_id=c.id) }}">{{ c.name }}</a></li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                    {% else %}
+                    <span class="badge bg-info text-dark me-3 py-2 px-3 small">
+                        <i class="fa-solid fa-school me-1"></i> {{ active_campus_name }}
+                    </span>
+                    {% endif %}
+                    <span class="text-secondary me-3 small d-none d-lg-inline">
+                        <i class="fa-solid fa-user-circle me-1"></i> {{ session.username }}
+                    </span>
+                    <a href="{{ url_for('logout') }}" class="btn btn-outline-danger btn-sm px-3">
+                        <i class="fa-solid fa-sign-out-alt me-1"></i> Logout
+                    </a>
+                </div>
+            </div>
+        </div>
+    </nav>
+    {% endif %}
+
+    <!-- Flash Messages -->
+    <div class="container mt-4 no-print">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} alert-dismissible fade show alert-custom" role="alert">
+                        {% if category == 'success' %}
+                            <i class="fa-solid fa-circle-check me-2 text-success"></i>
+                        {% elif category == 'danger' %}
+                            <i class="fa-solid fa-circle-exclamation me-2 text-danger"></i>
+                        {% else %}
+                            <i class="fa-solid fa-circle-info me-2 text-primary"></i>
+                        {% endif %}
+                        {{ message }}
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+    </div>
+
+    <!-- Main Content -->
+    <main class="container py-4">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Bootstrap & Custom JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

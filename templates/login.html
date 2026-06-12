@@ -1,0 +1,54 @@
+{% extends 'base.html' %}
+
+{% block title %}Login - Allied School Al-Rehman Campus{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-5 mt-5">
+        <div class="school-logo-glow">
+            <i class="fa-solid fa-graduation-cap"></i><br>
+            Allied School
+        </div>
+        <h4 class="text-center text-secondary mb-4" style="font-weight: 500; font-size: 1rem; letter-spacing: 0.1em; text-transform: uppercase;">
+            Al-Rehman Campus, Okara
+        </h4>
+        
+        <div class="glass-panel">
+            <div class="text-center mb-4">
+                <h3 class="mb-2">Admin Portal</h3>
+                <p class="text-secondary small">Please authenticate to manage fees & vouchers</p>
+            </div>
+            
+            <form action="{{ url_for('login') }}" method="POST">
+                <div class="mb-3">
+                    <label for="username" class="form-label">Username</label>
+                    <div class="input-group">
+                        <span class="input-group-text bg-transparent border-end-0 border-light-subtle text-secondary" style="border: 1px solid var(--glass-border);">
+                            <i class="fa-solid fa-user"></i>
+                        </span>
+                        <input type="text" class="form-control border-start-0" id="username" name="username" placeholder="Enter username" required autofocus>
+                    </div>
+                </div>
+                
+                <div class="mb-4">
+                    <label for="password" class="form-label">Password</label>
+                    <div class="input-group">
+                        <span class="input-group-text bg-transparent border-end-0 border-light-subtle text-secondary" style="border: 1px solid var(--glass-border);">
+                            <i class="fa-solid fa-lock"></i>
+                        </span>
+                        <input type="password" class="form-control border-start-0" id="password" name="password" placeholder="Enter password" required>
+                    </div>
+                </div>
+                
+                <button type="submit" class="btn btn-primary w-100 py-2.5">
+                    <i class="fa-solid fa-sign-in-alt me-2"></i>Authenticate System
+                </button>
+            </form>
+        </div>
+        
+        <div class="text-center mt-4">
+            <small class="text-muted">Default admin login: <strong>admin</strong> / <strong>admin</strong></small>
+        </div>
+    </div>
+</div>
+{% endblock %}

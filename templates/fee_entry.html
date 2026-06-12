@@ -1,0 +1,259 @@
+{% extends 'base.html' %}
+
+{% block title %}Fee Collection - Allied School Okara{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Left Column: Search & Enter Form -->
+    <div class="col-lg-6 mb-4">
+        <h1 class="mb-4 font-weight-bold" style="font-family: 'Outfit'; font-weight: 850;"><i class="fa-solid fa-receipt text-success me-2"></i>Fee Collection</h1>
+        
+        <div class="glass-panel">
+            <h5 class="mb-4 text-secondary text-uppercase small">Enter Payment Record</h5>
+            
+            <form action="{{ url_for('fee_entry') }}" method="POST" id="feeForm">
+                <div class="mb-4">
+                    <label class="form-label">Payment Type</label>
+                    <div class="d-flex gap-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="payment_type" id="type_monthly" value="monthly" checked onchange="togglePaymentType()">
+                            <label class="form-check-label" for="type_monthly">Monthly Fee</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="payment_type" id="type_annual" value="annual" onchange="togglePaymentType()">
+                            <label class="form-check-label" for="type_annual">Annual Charges</label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Select Month & Year First (since arrears depend on them) -->
+                <div class="row g-3 mb-4" id="monthly_fee_options">
+                    <div class="col-md-4">
+                        <label for="months" class="form-label">Number of Months</label>
+                        <input type="number" class="form-control" id="months" name="months" min="1" max="12" value="1" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label for="end_month" class="form-label">End Month (auto)</label>
+                        <input type="text" class="form-control" id="end_month" name="end_month" readonly>
+                    </div>
+                    <input type="hidden" id="months_input" name="months_input">
+                    <input type="hidden" id="end_month_input" name="end_month_input">
+                </div>
+                <div class="row g-3 mb-4">
+                    <div class="col-md-6">
+                        <label for="month" class="form-label">Billing Month</label>
+                        <select class="form-select" id="month" name="month">
+                            {% for m_num, m_name in months.items() %}
+                            <option value="{{ m_name }}" {% if m_name == target_month %}selected{% endif %}>{{ m_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="year" class="form-label">Billing Year</label>
+                        <select class="form-select" id="year" name="year">
+                            {% for y in years %}
+                            <option value="{{ y }}" {% if y == target_year %}selected{% endif %}>{{ y }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="row g-3 mb-4" id="annual_fee_options" style="display: none;">
+                    <div class="col-md-12">
+                        <label for="annual_year" class="form-label">Annual Charges Year</label>
+                        <select class="form-select" id="annual_year" name="annual_year">
+                            {% for y in years %}
+                            <option value="{{ y }}" {% if y == target_year %}selected{% endif %}>{{ y }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Autocomplete Search Input -->
+                <div class="mb-4 position-relative">
+                    <label for="student_search" class="form-label">Search Student</label>
+                    <div class="search-wrapper">
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                        <input type="text" class="form-control" id="student_search" placeholder="Type student name, father name or ID..." autocomplete="off" value="{% if selected_student %}{{ selected_student.name }}{% endif %}">
+                    </div>
+                    <div class="form-text text-secondary small">Type to search out of 3,000+ student records. Click a suggestion to select.</div>
+                </div>
+                
+                <!-- Hidden Real Select Element -->
+                <select id="student_id_select" name="student_id" class="d-none" required>
+                    <option value="">Select Student</option>
+                    {% for s in students %}
+                    <option value="{{ s.id }}" 
+                            data-name="{{ s.name }}" 
+                            data-father="{{ s.father_name }}" 
+                            data-class="{{ s.class }}"
+                            {% if s.id == selected_student_id %}selected{% endif %}>
+                        {{ s.name }} (Father: {{ s.father_name }}, Class: {{ s.class }}, ID: {{ s.id }})
+                    </option>
+                    {% endfor %}
+                </select>
+
+                {% if selected_student %}
+                <div class="mb-4">
+                    <label for="paid_amount" class="form-label">Paid Amount (Rs.)</label>
+                    <div class="input-group">
+                        <span class="input-group-text bg-transparent border-end-0 border-light-subtle text-secondary" style="border: 1px solid var(--glass-border);">Rs.</span>
+                        <input type="number" step="any" class="form-control border-start-0" id="paid_amount" name="paid_amount" placeholder="Enter amount paid" value="{{ arrears_info.total_payable if arrears_info else '' }}" required>
+                    </div>
+                    <div class="form-text text-secondary small" id="amount_hint">Defaults to total payable amount (Rs. {{ arrears_info.total_payable if arrears_info else 0 }}).</div>
+                </div>
+
+                <div class="mb-4">
+                    <label for="date_paid" class="form-label">Payment Date</label>
+                    <div class="input-group">
+                        <span class="input-group-text bg-transparent border-end-0 border-light-subtle text-secondary" style="border: 1px solid var(--glass-border);">
+                            <i class="fa-solid fa-calendar-days"></i>
+                        </span>
+                        <input type="date" class="form-control border-start-0" id="date_paid" name="date_paid" value="{{ current_date }}">
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary w-100 py-2.5">
+                    <i class="fa-solid fa-save me-2"></i> Save Fee Transaction
+                </button>
+                {% else %}
+                <div class="alert alert-info py-3 border-0 bg-secondary bg-opacity-20 text-center">
+                    <i class="fa-solid fa-user-check me-2"></i> Please select a student above to record a payment.
+                </div>
+                {% endif %}
+            </form>
+        </div>
+    </div>
+
+    <!-- Right Column: Student Fee Information Panel -->
+    <div class="col-lg-6 mb-4">
+        <h5 class="text-secondary mb-4 text-uppercase small text-lg-end mt-lg-2">Fee Verification Panel</h5>
+        
+        <div class="glass-panel h-100">
+            {% if selected_student and arrears_info %}
+            <div class="d-flex justify-content-between align-items-center border-bottom border-light-subtle pb-3 mb-4">
+                <div>
+                    <h3 class="mb-1">{{ selected_student.name }}</h3>
+                    <span class="text-secondary small">Father: <strong>{{ selected_student.father_name }}</strong></span>
+                </div>
+                <div class="text-end">
+                    <span class="badge badge-class fs-6 py-2 px-3">Class {{ selected_student.class }}</span>
+                    <div class="text-muted small mt-1 font-monospace">Student ID: {{ selected_student.id }}</div>
+                </div>
+            </div>
+
+            {% if arrears_info.remaining_payable > 0 %}
+    <div class="row g-3 mb-4">
+        <div class="col-6">
+            <div class="bg-secondary bg-opacity-10 p-3 rounded">
+                <span class="text-secondary small text-uppercase d-block mb-1">Monthly Tuition Fee</span>
+                <h4 class="mb-0 text-white">Rs. {{ "{:,.0f}".format(arrears_info.monthly_fee) }}</h4>
+            </div>
+        </div>
+        <div class="col-6">
+            <div class="bg-secondary bg-opacity-10 p-3 rounded">
+                <span class="text-secondary small text-uppercase d-block mb-1">Previous Arrears</span>
+{% if arrears_info.arrears > 0 %}
+                        <h4 class="mb-0 text-white">Rs. {{ "{:,.0f}".format(arrears_info.arrears) }}</h4>
+{% else %}
+                        <h4 class="mb-0 text-success">Rs. 0</h4>
+{% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="d-flex justify-content-between align-items-center py-2.5">
+        <span class="text-secondary">Remaining Balance:</span>
+        <span class="badge bg-danger bg-opacity-20 text-danger border border-danger border-opacity-30 fs-6 px-3 py-1.5">Rs. {{ "{:,.0f}".format(arrears_info.remaining_payable) }}</span>
+    </div>
+{% else %}
+    <div class="d-flex justify-content-between align-items-center py-2.5">
+        <span class="text-secondary">Remaining Balance:</span>
+        <span class="badge bg-success bg-opacity-20 text-success border border-success border-opacity-30 fs-6 px-3 py-1.5">Rs. 0</span>
+    </div>
+{% endif %}
+
+            <div class="d-flex gap-2">
+                <a href="{{ url_for('fee_history', student_id=selected_student.id) }}" class="btn btn-secondary w-50">
+                    <i class="fa-solid fa-clock-rotate-left me-1"></i> View Ledger
+                </a>
+                <a href="{{ url_for('voucher_print', student_id=selected_student.id, month=target_month, year=target_year) }}" class="btn btn-outline-info w-50">
+                    <i class="fa-solid fa-file-invoice-dollar me-1"></i> Print Challan
+                </a>
+            </div>
+            
+            {% else %}
+            <div class="d-flex flex-column justify-content-center align-items-center text-center h-100 text-secondary py-5">
+                <i class="fa-solid fa-id-card-clip fs-1 mb-3 text-muted"></i>
+                <h5>Select Student to Audit</h5>
+                <p class="small text-muted px-4">Find a student by searching in the panel on the left to see tuition fees, previous unpaid arrears, and print challan sheets.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize autocomplete student search
+        initStudentSearch('student_search', 'student_suggestions', 'student_id_select');
+        
+        const select = document.getElementById('student_id_select');
+        const monthSelect = document.getElementById('month');
+        const yearSelect = document.getElementById('year');
+        
+        function reloadWithParams() {
+            const studentId = select.value;
+            const month = monthSelect.value;
+            const year = yearSelect.value;
+            
+            if (studentId) {
+                window.location.href = `{{ url_for('fee_entry') }}?student_id=${studentId}&month=${month}&year=${year}`;
+            }
+        }
+        
+        // Reload details when student selection changes
+        select.addEventListener('change', reloadWithParams);
+        
+        // Compute end month when months or month changes
+        const monthsInput = document.getElementById('months');
+        const endMonthInput = document.getElementById('end_month');
+        function updateEndMonth() {
+            const startMonth = monthSelect.value;
+            const monthsCount = parseInt(monthsInput.value) || 1;
+            const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+            const startIdx = monthNames.findIndex(m => m.toLowerCase() === startMonth.toLowerCase());
+            if (startIdx >= 0) {
+                const endIdx = (startIdx + monthsCount - 1) % 12;
+                const endMonth = monthNames[endIdx];
+                endMonthInput.value = endMonth;
+            } else {
+                endMonthInput.value = '';
+            }
+        }
+        monthsInput.addEventListener('change', updateEndMonth);
+        monthSelect.addEventListener('change', updateEndMonth);
+        // Initialize on load
+        updateEndMonth();
+
+        // Reload when month/year change (for annual charges too)
+        yearSelect.addEventListener('change', reloadWithParams);
+        monthSelect.addEventListener('change', reloadWithParams);
+    });
+
+    function togglePaymentType() {
+        const isAnnual = document.getElementById('type_annual').checked;
+        document.getElementById('monthly_fee_options').style.display = isAnnual ? 'none' : '';
+        document.getElementById('annual_fee_options').style.display = isAnnual ? '' : 'none';
+        // Update hint text
+        const hint = document.getElementById('amount_hint');
+        if (isAnnual) {
+            hint.textContent = 'Enter the annual charges amount being paid.';
+        } else {
+            hint.textContent = 'Defaults to total payable amount.';
+        }
+    }
+
+</script>
+{% endblock %}

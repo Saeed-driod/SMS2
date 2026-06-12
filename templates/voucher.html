@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Challan - {{ data.student.name }} - {{ data.month }} {{ data.year }}</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- FontAwesome -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body.preview-screen {
+            background-color: #1e293b;
+            color: #f8fafc;
+        }
+        .voucher-preview-container {
+            max-width: 1100px;
+            margin: 30px auto;
+        }
+        .voucher-web-frame {
+            background: #ffffff;
+            color: #000000;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            padding: 20px;
+            margin-bottom: 30px;
+            overflow-x: auto;
+        }
+        .voucher-sheet {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 15px;
+            background: #ffffff;
+            color: #000000;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .voucher-copy {
+            padding: 10px;
+            position: relative;
+            background: #ffffff;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            font-family: 'Times New Roman', Times, serif;
+        }
+        .voucher-copy:not(:last-child) {
+            border-right: 1px dashed #4b5563;
+            padding-right: 20px;
+        }
+        .voucher-copy:not(:first-child) {
+            padding-left: 10px;
+        }
+        .voucher-copy:not(:last-child)::after {
+            content: '✂';
+            position: absolute;
+            right: -10px;
+            top: 45%;
+            font-size: 16px;
+            color: #374151;
+            background: #ffffff;
+            padding: 3px 0;
+            z-index: 10;
+        }
+        
+        .v-header-text {
+            text-align: center;
+            font-size: 16px;
+            font-weight: bold;
+            margin: 0;
+            line-height: 1.2;
+        }
+        .v-sub-text {
+            text-align: center;
+            font-size: 14px;
+            margin: 0;
+            line-height: 1.2;
+        }
+        .v-copy-name {
+            text-align: center;
+            font-family: 'Comic Sans MS', cursive, sans-serif;
+            font-size: 15px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .v-due-date {
+            font-size: 14px;
+            font-weight: bold;
+            margin: 5px 0;
+        }
+        .v-principal {
+            font-size: 14px;
+            margin: 15px 0;
+        }
+        .v-note-section {
+            font-family: 'Comic Sans MS', cursive, sans-serif;
+            font-size: 11px;
+            line-height: 1.3;
+            margin-bottom: 10px;
+        }
+        .v-note-section p {
+            margin: 0;
+        }
+        .v-note-bold {
+            font-family: 'Times New Roman', Times, serif;
+            font-weight: bold;
+            font-size: 12px;
+        }
+        .v-bank-section {
+            border-top: 1px solid #000;
+            margin-top: 6px;
+            padding-top: 5px;
+            font-size: 10px;
+            line-height: 1.4;
+        }
+        .v-bank-section p {
+            margin: 0;
+            font-family: 'Times New Roman', Times, serif;
+        }
+        .v-bank-title {
+            font-weight: bold;
+            font-size: 11px;
+            margin-bottom: 2px !important;
+        }
+        .v-bank-row {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            margin-bottom: 1px !important;
+        }
+        .v-bank-logo {
+            font-weight: bold;
+            font-size: 10px;
+            min-width: 55px;
+        }
+        .v-bank-acc {
+            font-size: 9.5px;
+        }
+        .v-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        .v-table td {
+            border: 1px solid #000;
+            padding: 4px 6px;
+            vertical-align: middle;
+        }
+
+        @media print {
+            body {
+                background: #ffffff !important;
+                color: #000000 !important;
+            }
+            .no-print { display: none !important; }
+            .voucher-preview-container {
+                max-width: 100% !important;
+                margin: 0 !important;
+                padding: 0 !important;
+            }
+            .voucher-web-frame {
+                box-shadow: none !important;
+                border: none !important;
+                padding: 0 !important;
+                margin: 0 !important;
+            }
+            .voucher-copy:not(:last-child) {
+                border-right: 1px dashed #000000 !important;
+            }
+            @page {
+                size: A4 landscape;
+                margin: 0.5cm;
+            }
+        }
+    </style>
+</head>
+<body class="preview-screen">
+    <!-- Top Action Bar -->
+    <div class="container-fluid py-3 bg-dark border-bottom border-secondary no-print">
+        <div class="container">
+            <div class="row align-items-center">
+                <div class="col-sm-6">
+                    <h5 class="mb-0 text-white"><i class="fa-solid fa-file-invoice-dollar text-purple me-2"></i>Challan Preview</h5>
+                    <small class="text-secondary">Fee Challan for {{ data.student.name }}</small>
+                </div>
+                <div class="col-sm-6 text-sm-end mt-2 mt-sm-0">
+                    <button onclick="window.print();" class="btn btn-primary px-4 me-2"><i class="fa-solid fa-print me-1"></i> Print Voucher</button>
+                    <button onclick="window.close(); setTimeout(function(){ history.back(); }, 100);" class="btn btn-secondary px-3"><i class="fa-solid fa-xmark me-1"></i> Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Challan Document -->
+    <div class="voucher-preview-container">
+        <div class="voucher-web-frame">
+            <div class="voucher-sheet">
+                {% for copy_name in ['Bank copy', 'Campus copy', 'Student copy'] %}
+                <div class="voucher-copy">
+                    <p class="v-header-text">Allied School Al-Rehman Campus</p>
+                    <p class="v-sub-text">Okara</p>
+                    <p class="v-sub-text">Fee for: {{ data.month }} {{ data.year }} - {{ data.month }} {{ data.year }}</p>
+                    <p class="v-copy-name">{{ copy_name }}</p>
+                    
+                    <table class="v-table" style="margin-bottom: 10px;">
+                        <tr>
+                            <td style="width: 55%;">Sr. No.:</td>
+                            <td>AS-{{ data.year % 100 }}{{ "%02d"|format(data.student.id) }}</td>
+                        </tr>
+                        <tr>
+                            <td>Name:</td>
+                            <td>{{ data.student.name }}</td>
+                        </tr>
+                        <tr>
+                            <td>Father Name:</td>
+                            <td>{{ data.student.father_name }}</td>
+                        </tr>
+                        <tr>
+                            <td>Class:</td>
+                            <td>{{ data.student.class }}</td>
+                        </tr>
+                        {% if data.other_dues > 0 %}
+                        <tr>
+                            <td>{{ data.other_dues_desc }}</td>
+                            <td>{{ "{:.0f}".format(data.other_dues) }}</td>
+                        </tr>
+                        {% endif %}
+                        <tr>
+                            <td>Arrears:</td>
+                            <td>{{ "{:.0f}".format(data.arrears) }}</td>
+                        </tr>
+                        {% if data.months and data.months > 1 %}
+                            {% for m in data.multi_months_list %}
+                            <tr>
+                                <td>Monthly fee for {{ m.name }}:</td>
+                                <td>{{ "{:.0f}".format(m.fee) }}</td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td>Monthly fee for {{ data.month }}:</td>
+                                <td>{{ "{:.0f}".format(data.multi_months_list[0].fee if data.multi_months_list else data.monthly_fee) }}</td>
+                            </tr>
+                        {% endif %}
+                        <tr>
+                            <td style="font-weight: bold;">Payable by Due Date:</td>
+                            <td style="font-weight: bold;">{{ "{:.0f}".format(data.payable_by_due) }}</td>
+                        </tr>
+                        <tr>
+                            <td style="font-weight: bold;">Payable After Due Date:</td>
+                            <td style="font-weight: bold;">{{ "{:.0f}".format(data.payable_after_due) }}</td>
+                        </tr>
+                    </table>
+
+                    <p class="v-due-date">Due date: {{ data.due_date }}</p>
+                    <p class="v-principal">Principal: ____________________</p>
+                    
+                    <div class="v-note-section">
+                        <p style="font-weight: bold; font-family: 'Times New Roman', Times, serif;">Note:-</p>
+                        <p>-&gt;The fee be deposited in the</p>
+                        <p style="margin-left: 15px;">Designated Bank.</p>
+                        <p>-&gt;The challan must be deposited within due</p>
+                        <p style="margin-left: 15px;">date to avoid late payment charges.</p>
+                        <p class="v-note-bold">-&gt; New challan issuance charges Rs:10/.</p>
+                    </div>
+
+                    <div class="v-bank-section">
+                        <p class="v-bank-title">Bank Account Details:</p>
+                        <div class="v-bank-row">
+                            <span class="v-bank-logo">HBL</span>
+                            <span class="v-bank-acc">A/C No: 0018307900667103</span>
+                        </div>
+                        <div class="v-bank-row">
+                            <span class="v-bank-logo">BOP</span>
+                            <span class="v-bank-acc">A/C No: 6020168366800013</span>
+                        </div>
+                        <div class="v-bank-row">
+                            <span class="v-bank-logo">Bank Alfalah</span>
+                            <span class="v-bank-acc">0434001006662966</span>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</body>
+</html>

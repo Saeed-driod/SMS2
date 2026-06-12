@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+
+{% block title %}Excel Import - Allied School Okara{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <h1 class="mb-4 font-weight-bold" style="font-family: 'Outfit'; font-weight: 850;"><i class="fa-solid fa-file-excel text-success me-2"></i>Excel Data Import</h1>
+        
+        <!-- Local Workspace Auto Import -->
+        <div class="glass-panel mb-4">
+            <h5 class="mb-3 text-white"><i class="fa-solid fa-magic text-primary me-2"></i>One-Click Auto-Import</h5>
+            <p class="text-secondary small">The system detected a local spreadsheet file in the project workspace (<strong>Fee record 2026.xlsx</strong>). You can import student profiles and fee records directly without uploading.</p>
+            
+            <form action="{{ url_for('import_excel_view') }}" method="POST">
+                <input type="hidden" name="auto_import" value="1">
+                <button type="submit" class="btn btn-primary" onclick="return confirm('WARNING: This will clear all existing student records and payment transactions currently in the database, replacing them with the data from the Excel workbook. Are you sure you want to proceed?');">
+                    <i class="fa-solid fa-play me-1"></i> Run Automated Import
+                </button>
+            </form>
+        </div>
+        
+        <!-- Standard File Upload -->
+        <div class="glass-panel">
+            <h5 class="mb-3 text-white"><i class="fa-solid fa-upload text-cyan me-2"></i>Upload Excel Spreadsheet</h5>
+            <p class="text-secondary small">If you have a modified Excel spreadsheet or another file layout, you can upload it here. The file must follow the required format (sheets named by class grade, Name in column index 1, Father's Name in column index 2, and billing columns).</p>
+            
+            <form action="{{ url_for('import_excel_view') }}" method="POST" enctype="multipart/form-data">
+                <div class="mb-4">
+                    <label for="excelFile" class="form-label">Choose Excel File (.xlsx, .xls)</label>
+                    <input class="form-control" type="file" id="excelFile" name="file" accept=".xlsx, .xls" required>
+                </div>
+                
+                <button type="submit" class="btn btn-secondary" onclick="return confirm('WARNING: Uploading and importing a new file will clear all existing student registries and payments in the database. Proceed?');">
+                    <i class="fa-solid fa-cloud-arrow-up me-1"></i> Upload & Import
+                </button>
+            </form>
+        </div>
+        
+        <!-- Structure Format Guide -->
+        <div class="mt-4 p-3 bg-secondary bg-opacity-10 border border-light-subtle border-opacity-10 rounded">
+            <h6 class="text-white"><i class="fa-solid fa-circle-info me-2 text-info"></i>Excel File Formatting Rules:</h6>
+            <ul class="text-secondary small mb-0 mt-2 ps-3">
+                <li class="mb-1"><strong>Sheet Names:</strong> Each sheet represents a class name (e.g., 'Nursery', 'Prep', 'One').</li>
+                <li class="mb-1"><strong>Row 3 (Header):</strong> Cell headers are expected on row index 2 (third row). Column 1 must represent 'Name', column 2 represents 'Father Name'.</li>
+                <li class="mb-1"><strong>Monthly Fee Column:</strong> Columns containing "month" (like "Month", "Month 26") and not representing specific months hold the tuition fee value.</li>
+                <li class="mb-1"><strong>Paid Columns:</strong> Columns starting with month contractions (like "Nov", "Dec", "Mar", "April") hold the actual payments made.</li>
+            </ul>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,72 @@
+{% extends 'base.html' %}
+
+{% block title %}Settings - School Management Studio{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <h1 class="mb-4 font-weight-bold" style="font-family: 'Outfit'; font-weight: 850;"><i class="fa-solid fa-sliders text-secondary me-2"></i>System Settings</h1>
+        
+        <div class="glass-panel">
+            <h5 class="mb-4 text-secondary text-uppercase small border-bottom border-light-subtle pb-2">
+                Configuration for {% if active_campus_id %}Campus: <strong class="text-white">{{ active_campus_name }}</strong>{% else %}<strong class="text-white">All Campuses (Global Defaults)</strong>{% endif %}
+            </h5>
+            
+            <form action="{{ url_for('settings_view') }}" method="POST">
+                <div class="row g-4">
+                    <!-- School Name -->
+                    <div class="col-12">
+                        <label for="school_name" class="form-label">School Name & Location</label>
+                        <input type="text" class="form-control" id="school_name" name="school_name" value="{{ settings.get('school_name', '') }}" required>
+                        <div class="form-text text-secondary small">This name appears at the top of all printed challan vouchers. Use a comma to separate name and campus (e.g. Allied School, Al-Rehman Campus).</div>
+                    </div>
+                    
+                    <!-- Bank Name -->
+                    <div class="col-12">
+                        <label for="bank_name" class="form-label">Designated Collection Bank Details</label>
+                        <input type="text" class="form-control" id="bank_name" name="bank_name" value="{{ settings.get('bank_name', '') }}" required>
+                        <div class="form-text text-secondary small">This detail is printed on challans showing where parents should deposit fees.</div>
+                    </div>
+                    
+                    <!-- Due Day -->
+                    <div class="col-md-6">
+                        <label for="due_day" class="form-label">Standard Due Date (Day of Month)</label>
+                        <input type="number" min="1" max="28" class="form-control" id="due_day" name="due_day" value="{{ settings.get('due_day', '10') }}" required>
+                        <div class="form-text text-secondary small">Standard day of the month when fees are due (e.g., 10th of every month).</div>
+                    </div>
+                    
+                    <!-- Late Fee -->
+                    <div class="col-md-6">
+                        <label for="late_fee" class="form-label">Late Payment Surcharge (Rs.)</label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-transparent border-end-0 border-light-subtle text-secondary" style="border: 1px solid var(--glass-border);">Rs.</span>
+                            <input type="number" step="any" min="0" class="form-control border-start-0" id="late_fee" name="late_fee" value="{{ settings.get('late_fee', '100') }}" required>
+                        </div>
+                        <div class="form-text text-secondary small">Surcharge amount added to total payable amount if paid after the due date.</div>
+                    </div>
+                    
+                    <div class="col-12 mt-5">
+                        <h5 class="mb-3 text-secondary text-uppercase small border-bottom border-light-subtle pb-2">
+                            Change Password for {% if active_campus_id %}Operator Account (<strong class="text-white">{{ session.username }}</strong>){% else %}<strong class="text-white">Admin Account (admin)</strong>{% endif %}
+                        </h5>
+                        <p class="text-secondary small">Leave this field blank if you do not wish to change the current password.</p>
+                    </div>
+                    
+                    <!-- New Password -->
+                    <div class="col-12">
+                        <label for="new_password" class="form-label">New Password</label>
+                        <input type="password" class="form-control" id="new_password" name="new_password" placeholder="Enter new password">
+                    </div>
+                    
+                    <!-- Submit -->
+                    <div class="col-12 text-end mt-5">
+                        <button type="submit" class="btn btn-primary px-4">
+                            <i class="fa-solid fa-save me-1"></i> Save Configuration
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

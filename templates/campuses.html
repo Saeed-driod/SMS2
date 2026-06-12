@@ -1,0 +1,87 @@
+{% extends 'base.html' %}
+
+{% block title %}Campus Manager - School Management Studio{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Register New Campus -->
+    <div class="col-md-4 mb-4">
+        <div class="card card-custom h-100">
+            <div class="card-body">
+                <h3 class="card-title mb-4 font-weight-bold" style="font-family: 'Outfit'; font-weight: 850;">
+                    <i class="fa-solid fa-plus-circle text-purple me-2"></i>Register Campus
+                </h3>
+                <form method="POST" action="{{ url_for('campuses_view') }}">
+                    <div class="mb-3">
+                        <label for="name" class="form-label">Campus Name</label>
+                        <input type="text" class="form-control" id="name" name="name" required placeholder="e.g. Model Town Campus, Okara">
+                    </div>
+                    <div class="mb-4">
+                        <label for="code" class="form-label">Campus Code (lowercase, no spaces)</label>
+                        <input type="text" class="form-control" id="code" name="code" required placeholder="e.g. model_town" pattern="[a-z0-9_-]+">
+                        <div class="form-text text-secondary small mt-1">
+                            This code becomes the default username & password for the campus operator.
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-purple w-100">
+                        <i class="fa-solid fa-school me-2"></i> Register Campus
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Active Campuses List -->
+    <div class="col-md-8 mb-4">
+        <div class="card card-custom h-100">
+            <div class="card-body">
+                <h3 class="card-title mb-4 font-weight-bold" style="font-family: 'Outfit'; font-weight: 850;">
+                    <i class="fa-solid fa-school-flag text-purple me-2"></i>Registered Branches ({{ campuses|length }})
+                </h3>
+                
+                <div class="table-responsive">
+                    <table class="table table-hover text-white align-middle">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>ID</th>
+                                <th>Branch Name</th>
+                                <th>System Code</th>
+                                <th>Operator Account</th>
+                                <th>Status</th>
+                                <th class="text-end">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for campus in campuses %}
+                            <tr>
+                                <td><span class="badge bg-secondary font-monospace">{{ campus.id }}</span></td>
+                                <td><strong>{{ campus.name }}</strong></td>
+                                <td><code class="text-info bg-dark bg-opacity-25 px-2 py-1 rounded">{{ campus.code }}</code></td>
+                                <td>
+                                    <div class="small">
+                                        <div><strong class="text-secondary">Username:</strong> <code class="text-purple">{{ campus.code }}</code></div>
+                                        <div><strong class="text-secondary">Password:</strong> <code class="text-purple">{{ campus.code }}</code></div>
+                                    </div>
+                                </td>
+                                <td>
+                                    <span class="badge bg-success-custom text-success">
+                                        <i class="fa-solid fa-circle-check me-1"></i> Active
+                                    </span>
+                                </td>
+                                <td class="text-end">
+                                    <form method="POST" action="{{ url_for('delete_campus', campus_id=campus.id) }}" onsubmit="return confirm('Are you sure you want to permanently delete this campus and all its data?');" class="d-inline">
+                                        <button type="submit" class="btn btn-outline-danger btn-sm" title="Delete Campus">
+                                            <i class="fa-solid fa-trash"></i>
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,172 @@
+{% extends 'base.html' %}
+
+{% block title %}Students Registry - School Management Studio{% endblock %}
+
+{% block content %}
+<div class="row align-items-center mb-4">
+    <div class="col-md-6">
+        <h1 class="mb-0 font-weight-bold" style="font-family: 'Outfit'; font-weight: 850;"><i class="fa-solid fa-user-graduate text-primary me-2"></i>Students Registry</h1>
+        <p class="text-secondary mb-0">Total Enrolled: <strong class="text-white">{{ total_students }}</strong> students</p>
+    </div>
+    <div class="col-md-6 text-md-end mt-3 mt-md-0">
+        <a href="{{ url_for('student_add') }}" class="btn btn-primary">
+            <i class="fa-solid fa-user-plus me-1"></i> Add New Student
+        </a>
+    </div>
+</div>
+
+<!-- Search and Filter Bar -->
+<div class="glass-panel mb-4">
+    <form action="{{ url_for('students_view') }}" method="GET" class="row g-3">
+        <div class="col-md-4">
+            <div class="search-wrapper">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                <input type="text" class="form-control" name="search" placeholder="Search by student name or father name..." value="{{ search }}">
+            </div>
+        </div>
+        <div class="col-md-3">
+            <select class="form-select" name="class_filter">
+                <option value="">All Classes</option>
+                {% for c in classes %}
+                <option value="{{ c }}" {% if class_filter == c %}selected{% endif %}>Class {{ c }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        
+        {% if session.role == 'admin' %}
+        <div class="col-md-3">
+            <select class="form-select" name="campus_filter">
+                <option value="">All Campuses</option>
+                {% for c in campuses_list %}
+                <option value="{{ c.id }}" {% if campus_filter == c.id %}selected{% endif %}>{{ c.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-2">
+        {% else %}
+        <div class="col-md-5 text-end">
+        {% endif %}
+            <button type="submit" class="btn btn-secondary w-100">
+                <i class="fa-solid fa-sliders me-1"></i> Filter
+            </button>
+        </div>
+    </form>
+</div>
+
+<!-- Students Grid/Table -->
+<div class="glass-panel">
+    <div class="table-responsive">
+        <table class="table table-custom">
+            <thead>
+                <tr>
+                    <th style="width: 80px;">ID</th>
+                    <th>Name</th>
+                    <th>Father Name</th>
+                    <th>Class</th>
+                    {% if session.role == 'admin' and not active_campus_id %}
+                    <th>Campus</th>
+                    {% endif %}
+                    <th>Monthly Fee</th>
+                    <th>Billed Since</th>
+                    <th style="width: 280px;" class="text-end">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if students %}
+                    {% for student in students %}
+                    <tr>
+                        <td class="text-secondary font-monospace">{{ student.id }}</td>
+                        <td><span class="fw-bold text-white">{{ student.name }}</span></td>
+                        <td class="text-secondary">{{ student.father_name }}</td>
+                        <td><span class="badge badge-class">Class {{ student.class }}</span></td>
+                        {% if session.role == 'admin' and not active_campus_id %}
+                        <td>
+                            <span class="badge bg-dark border border-secondary text-info">
+                                <i class="fa-solid fa-school me-1" style="font-size: 10px;"></i>{{ student.campus_name }}
+                            </span>
+                        </td>
+                        {% endif %}
+                        <td><span class="badge badge-amount">Rs. {{ "{:,.0f}".format(student.monthly_fee) }}</span></td>
+                        <td class="text-secondary small">{{ student.start_month }}/{{ student.start_year }}</td>
+                        <td class="text-end">
+                            <div class="d-inline-flex gap-2">
+                                <a href="{{ url_for('fee_entry', student_id=student.id) }}" class="btn btn-outline-success btn-sm px-2.5" title="Collect Fee">
+                                    <i class="fa-solid fa-receipt"></i>
+                                </a>
+                                <a href="{{ url_for('fee_history', student_id=student.id) }}" class="btn btn-outline-info btn-sm px-2.5" title="Payment History">
+                                    <i class="fa-solid fa-clock-rotate-left"></i>
+                                </a>
+                                <a href="{{ url_for('student_edit', id=student.id) }}" class="btn btn-outline-light btn-sm px-2.5" title="Edit Student">
+                                    <i class="fa-solid fa-pencil"></i>
+                                </a>
+                                <form action="{{ url_for('student_delete', id=student.id) }}" method="POST" onsubmit="return confirm('Are you sure you want to delete this student and all their fee payment history? This action is permanent.');" class="d-inline">
+                                    <button type="submit" class="btn btn-outline-danger btn-sm px-2.5" title="Delete">
+                                        <i class="fa-solid fa-trash"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="{% if session.role == 'admin' and not active_campus_id %}8{% else %}7{% endif %}" class="text-center text-secondary py-5">
+                            <i class="fa-solid fa-users-slash d-block fs-3 mb-3 text-muted"></i>
+                            No students matching the search criteria were found in the registry.
+                        </td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination -->
+    {% if total_pages > 1 %}
+    <nav class="d-flex justify-content-between align-items-center mt-4">
+        <div class="text-secondary small">
+            Showing Page <strong class="text-white">{{ page }}</strong> of {{ total_pages }}
+        </div>
+        <ul class="pagination pagination-custom mb-0">
+            <li class="page-item {% if page == 1 %}disabled{% endif %}">
+                <a class="page-link" href="{{ url_for('students_view', page=page-1, search=search, class_filter=class_filter, campus_filter=campus_filter) }}">
+                    <i class="fa-solid fa-chevron-left"></i>
+                </a>
+            </li>
+            
+            {% set start_page = page - 2 if page - 2 > 0 else 1 %}
+            {% set end_page = page + 2 if page + 2 <= total_pages else total_pages %}
+            
+            {% if start_page > 1 %}
+                <li class="page-item">
+                    <a class="page-link" href="{{ url_for('students_view', page=1, search=search, class_filter=class_filter, campus_filter=campus_filter) }}">1</a>
+                </li>
+                {% if start_page > 2 %}
+                    <li class="page-item disabled"><span class="page-link">...</span></li>
+                {% endif %}
+            {% endif %}
+            
+            {% for p in range(start_page, end_page + 1) %}
+                <li class="page-item {% if p == page %}active{% endif %}">
+                    <a class="page-link" href="{{ url_for('students_view', page=p, search=search, class_filter=class_filter, campus_filter=campus_filter) }}">{{ p }}</a>
+                </li>
+            {% endfor %}
+            
+            {% if end_page < total_pages %}
+                {% if end_page < total_pages - 1 %}
+                    <li class="page-item disabled"><span class="page-link">...</span></li>
+                {% endif %}
+                <li class="page-item">
+                    <a class="page-link" href="{{ url_for('students_view', page=total_pages, search=search, class_filter=class_filter, campus_filter=campus_filter) }}">{{ total_pages }}</a>
+                </li>
+            {% endif %}
+            
+            <li class="page-item {% if page == total_pages %}disabled{% endif %}">
+                <a class="page-link" href="{{ url_for('students_view', page=page+1, search=search, class_filter=class_filter, campus_filter=campus_filter) }}">
+                    <i class="fa-solid fa-chevron-right"></i>
+                </a>
+            </li>
+        </ul>
+    </nav>
+    {% endif %}
+</div>
+{% endblock %}

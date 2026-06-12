@@ -1,0 +1,135 @@
+{% extends 'base.html' %}
+
+{% block title %}Defaulters List - School Management Studio{% endblock %}
+
+{% block content %}
+<div class="row align-items-center mb-4">
+    <div class="col-md-7">
+        <h1 class="mb-0 font-weight-bold" style="font-family: 'Outfit'; font-weight: 850;"><i class="fa-solid fa-user-xmark text-danger me-2"></i>Monthly Defaulters</h1>
+        <p class="text-secondary mb-0">Students with outstanding fees for <strong class="text-white">{{ target_month }} {{ target_year }}</strong></p>
+    </div>
+    <div class="col-md-5 text-md-end mt-3 mt-md-0">
+        <button onclick="window.print();" class="btn btn-secondary no-print">
+            <i class="fa-solid fa-print me-1"></i> Print Defaulters List
+        </button>
+    </div>
+</div>
+
+<!-- Filter Selection Bar -->
+<div class="glass-panel mb-4 no-print">
+    <form action="{{ url_for('defaulters_view') }}" method="GET" class="row g-3 align-items-end">
+        <div class="col-md-3">
+            <label for="month" class="form-label">Billing Month</label>
+            <select class="form-select" id="month" name="month">
+                {% for m in months %}
+                <option value="{{ m }}" {% if m == target_month %}selected{% endif %}>{{ m }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label for="year" class="form-label">Billing Year</label>
+            <select class="form-select" id="year" name="year">
+                {% for y in years %}
+                <option value="{{ y }}" {% if y == target_year %}selected{% endif %}>{{ y }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-4">
+            <label for="class_filter" class="form-label">Class Filter</label>
+            <select class="form-select" id="class_filter" name="class_filter">
+                <option value="">All Classes</option>
+                {% for c in classes %}
+                <option value="{{ c }}" {% if class_filter == c %}selected{% endif %}>Class {{ c }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-2">
+            <button type="submit" class="btn btn-primary w-100">
+                <i class="fa-solid fa-arrows-rotate me-1"></i> Refresh
+            </button>
+        </div>
+    </form>
+</div>
+
+<!-- Summary Banner -->
+<div class="total-defaulters-banner d-flex justify-content-between align-items-center flex-wrap g-3 mb-4">
+    <div>
+        <h4 class="mb-1 text-danger font-weight-bold"><i class="fa-solid fa-triangle-exclamation me-2"></i>Outstanding Recovery</h4>
+        <span class="text-secondary small">Total unpaid amount across listed defaulters</span>
+    </div>
+    <div class="text-md-end">
+        <span class="text-secondary small d-block">Total Defaulter Balance</span>
+        <h2 class="mb-0 text-white font-weight-bold">Rs. {{ "{:,.0f}".format(total_defaulter_amount) }}</h2>
+    </div>
+</div>
+
+<!-- Defaulters Table -->
+<div class="glass-panel">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h5 class="mb-0 text-secondary text-uppercase small">Defaulter Students (Count: {{ defaulters|length }})</h5>
+    </div>
+    
+    <div class="table-responsive">
+        <table class="table table-custom">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Name</th>
+                    <th>Father Name</th>
+                    <th>Class</th>
+                    {% if session.role == 'admin' and not active_campus_id %}
+                    <th>Campus</th>
+                    {% endif %}
+                    <th>Monthly Fee</th>
+                    <th>Arrears</th>
+                    <th>Total Payable</th>
+                    <th>Paid</th>
+                    <th>Remaining</th>
+                    <th class="no-print" style="width: 150px; text-align: right;">Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if defaulters %}
+                    {% for d in defaulters %}
+                    <tr class="align-middle">
+                        <td class="text-secondary font-monospace">{{ d.id }}</td>
+                        <td><span class="fw-bold text-white">{{ d.name }}</span></td>
+                        <td class="text-secondary">{{ d.father_name }}</td>
+                        <td><span class="badge badge-class">Class {{ d.class }}</span></td>
+                        {% if session.role == 'admin' and not active_campus_id %}
+                        <td>
+                            <span class="badge bg-dark border border-secondary text-info">
+                                <i class="fa-solid fa-school me-1" style="font-size: 10px;"></i>{{ d.campus_name }}
+                            </span>
+                        </td>
+                        {% endif %}
+                        <td>Rs. {{ "{:,.0f}".format(d.monthly_fee) }}</td>
+                        <td class="text-warning">Rs. {{ "{:,.0f}".format(d.arrears) }}</td>
+                        <td class="text-secondary">Rs. {{ "{:,.0f}".format(d.total_payable) }}</td>
+                        <td class="text-success">Rs. {{ "{:,.0f}".format(d.paid) }}</td>
+                        <td class="text-danger font-weight-bold">Rs. {{ "{:,.0f}".format(d.remaining) }}</td>
+                        <td class="no-print text-end">
+                            <div class="d-inline-flex gap-2">
+                                <a href="{{ url_for('fee_entry', student_id=d.id, month=target_month, year=target_year) }}" class="btn btn-outline-success btn-sm px-2.5" title="Collect Fee">
+                                    <i class="fa-solid fa-receipt"></i>
+                                </a>
+                                <a href="{{ url_for('voucher_print', student_id=d.id, month=target_month, year=target_year) }}" class="btn btn-outline-info btn-sm px-2.5" title="Print Challan">
+                                    <i class="fa-solid fa-file-invoice-dollar"></i>
+                                </a>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="{% if session.role == 'admin' and not active_campus_id %}11{% else %}10{% endif %}" class="text-center text-secondary py-5">
+                            <i class="fa-solid fa-circle-check d-block fs-3 mb-3 text-success"></i>
+                            All accounts settled! No outstanding defaulters for this period.
+                        </td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
