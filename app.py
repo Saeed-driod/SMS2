@@ -1170,18 +1170,8 @@ def import_excel_file(filepath):
     conn.commit()
     conn.close()
 
-# Vercel deployment variable global target
-app = app
-
-# Ensure database is initialized on serverless startup
-if os.environ.get('VERCEL'):
-    import import_excel
-    if not os.path.exists(DB_PATH):
-        import_excel.init_db()
-        try:
-            import_excel.import_data()
-        except Exception:
-            pass
+# Vercel serverless deployment runtime expects this explicitly
+handler = app
 
 if __name__ == '__main__':
     import import_excel
