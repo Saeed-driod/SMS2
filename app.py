@@ -11,8 +11,20 @@ app = Flask(__name__)
 app.secret_key = 'allied_school_rehman_campus_key_secret_2026'
 # --- DATABASE PATH FOR VERCEL SERVERLESS ---
 import os
+import shutil
 if os.environ.get('VERCEL'):
     DB_PATH = '/tmp/sms.db'
+    if not os.path.exists(DB_PATH):
+        source_db = os.path.join(os.path.dirname(__file__), 'sms.db')
+        if os.path.exists(source_db):
+            try:
+                shutil.copy(source_db, DB_PATH)
+            except Exception as e:
+                import import_excel
+                import_excel.init_db()
+        else:
+            import import_excel
+            import_excel.init_db()
 else:
     DB_PATH = 'sms.db'
 # --------------------------------------------

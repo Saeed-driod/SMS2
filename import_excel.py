@@ -4,7 +4,12 @@ import numpy as np
 import re
 import os
 
-DB_PATH = 'sms.db'
+# --- DATABASE PATH FOR VERCEL SERVERLESS ---
+if os.environ.get('VERCEL'):
+    DB_PATH = '/tmp/sms.db'
+else:
+    DB_PATH = 'sms.db'
+# --------------------------------------------
 EXCEL_PATH = 'Fee record 2026.xlsx'
 
 MONTH_MAP = {
