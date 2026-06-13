@@ -1164,6 +1164,9 @@ def import_excel_file(filepath):
     conn.commit()
     conn.close()
 
+# Vercel serverless deployment handler target require krta hai
+app = app
+
 if __name__ == '__main__':
     import import_excel
     import_excel.init_db()
