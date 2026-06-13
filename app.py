@@ -9,7 +9,13 @@ from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 app.secret_key = 'allied_school_rehman_campus_key_secret_2026'
-DB_PATH = 'sms.db'
+# --- DATABASE PATH FOR VERCEL SERVERLESS ---
+import os
+if os.environ.get('VERCEL'):
+    DB_PATH = '/tmp/sms.db'
+else:
+    DB_PATH = 'sms.db'
+# --------------------------------------------
 UPLOAD_FOLDER = 'uploads'
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -1164,11 +1170,20 @@ def import_excel_file(filepath):
     conn.commit()
     conn.close()
 
-# Vercel serverless deployment handler target require krta hai
+# Vercel deployment variable global target
 app = app
+
+# Ensure database is initialized on serverless startup
+if os.environ.get('VERCEL'):
+    import import_excel
+    if not os.path.exists(DB_PATH):
+        import_excel.init_db()
+        try:
+            import_excel.import_data()
+        except Exception:
+            pass
 
 if __name__ == '__main__':
     import import_excel
     import_excel.init_db()
-    
     app.run(host='0.0.0.0', port=5000, debug=True)
