@@ -1,0 +1,156 @@
+{% extends 'base.html' %}
+
+{% block title %}Student Deletion Requests - School Management Studio{% endblock %}
+
+{% block content %}
+<div class="row align-items-center mb-4">
+    <div class="col-md-7">
+        <h1 class="page-title mb-1"><i class="fa-solid fa-user-shield text-danger me-2"></i>Student Deletion Requests</h1>
+        <p class="text-secondary small mb-0">Review, approve, or decline student removal requests submitted by campuses.</p>
+    </div>
+    <div class="col-md-5 text-md-end mt-3 mt-md-0">
+        <a href="{{ url_for('students_view') }}" class="btn btn-secondary btn-sm px-3">
+            <i class="fa-solid fa-arrow-left me-1"></i> Back to Registry
+        </a>
+    </div>
+</div>
+
+<!-- Filter Tabs -->
+<div class="glass-panel mb-4 p-2">
+    <ul class="nav nav-pills custom-nav-pills">
+        <li class="nav-item">
+            <a class="nav-link {% if status_filter == 'pending' %}active{% endif %}" href="{{ url_for('delete_requests_view', status='pending') }}">
+                <i class="fa-solid fa-hourglass-half me-1"></i> Pending Approval
+                <span class="badge rounded-pill ms-2 {% if status_filter == 'pending' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">{{ pending_count }}</span>
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if status_filter == 'approved' %}active{% endif %}" href="{{ url_for('delete_requests_view', status='approved') }}">
+                <i class="fa-solid fa-circle-check me-1"></i> Approved
+                <span class="badge rounded-pill ms-2 {% if status_filter == 'approved' %}bg-success{% else %}bg-secondary{% endif %}">{{ approved_count }}</span>
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if status_filter == 'rejected' %}active{% endif %}" href="{{ url_for('delete_requests_view', status='rejected') }}">
+                <i class="fa-solid fa-circle-xmark me-1"></i> Rejected
+                <span class="badge rounded-pill ms-2 {% if status_filter == 'rejected' %}bg-danger{% else %}bg-secondary{% endif %}">{{ rejected_count }}</span>
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if status_filter == 'all' %}active{% endif %}" href="{{ url_for('delete_requests_view', status='all') }}">
+                <i class="fa-solid fa-list me-1"></i> All Requests
+                <span class="badge rounded-pill ms-2 bg-secondary">{{ all_count }}</span>
+            </a>
+        </li>
+    </ul>
+</div>
+
+<!-- Requests Table -->
+<div class="glass-panel">
+    <div class="table-responsive">
+        <table class="table table-custom">
+            <thead>
+                <tr>
+                    <th style="width: 70px;">Req #</th>
+                    <th>Student Info</th>
+                    <th>Class</th>
+                    <th>Campus</th>
+                    <th>Requested By</th>
+                    <th>Reason / Notes</th>
+                    <th>Status</th>
+                    <th style="width: 190px;" class="text-end">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if requests %}
+                    {% for req in requests %}
+                    <tr>
+                        <td class="text-secondary font-monospace">#{{ req.id }}</td>
+                        <td>
+                            <div class="d-flex flex-column">
+                                <span class="fw-bold text-white">{{ req.student_name }}</span>
+                                {% if req.student_father_name %}
+                                <span class="text-secondary small">S/O {{ req.student_father_name }}</span>
+                                {% endif %}
+                                <span class="text-muted" style="font-size: 0.75rem;">ID: {{ req.student_id }}</span>
+                            </div>
+                        </td>
+                        <td><span class="badge badge-class">Class {{ req.student_class }}</span></td>
+                        <td>
+                            <span class="badge bg-dark border border-secondary text-info">
+                                <i class="fa-solid fa-school me-1" style="font-size: 10px;"></i>{{ req.campus_name or 'Main Campus' }}
+                            </span>
+                        </td>
+                        <td>
+                            <div class="d-flex flex-column">
+                                <span class="text-light small"><i class="fa-solid fa-user me-1 text-secondary"></i>{{ req.requested_by_user }}</span>
+                                <span class="text-secondary" style="font-size: 0.75rem;">{{ req.requested_at }}</span>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="text-secondary small fst-italic" style="max-width: 250px;">
+                                "{{ req.reason or 'No reason specified.' }}"
+                            </div>
+                        </td>
+                        <td>
+                            {% if req.status == 'pending' %}
+                                <span class="badge bg-warning text-dark">
+                                    <i class="fa-solid fa-hourglass-half me-1"></i> Pending
+                                </span>
+                            {% elif req.status == 'approved' %}
+                                <span class="badge bg-success">
+                                    <i class="fa-solid fa-circle-check me-1"></i> Approved
+                                </span>
+                                {% if req.actioned_by_user %}
+                                <div class="text-muted mt-1" style="font-size: 0.72rem;">
+                                    By {{ req.actioned_by_user }}
+                                </div>
+                                {% endif %}
+                            {% elif req.status == 'rejected' %}
+                                <span class="badge bg-danger">
+                                    <i class="fa-solid fa-circle-xmark me-1"></i> Rejected
+                                </span>
+                                {% if req.actioned_by_user %}
+                                <div class="text-muted mt-1" style="font-size: 0.72rem;">
+                                    By {{ req.actioned_by_user }}
+                                </div>
+                                {% endif %}
+                            {% endif %}
+                        </td>
+                        <td class="text-end">
+                            {% if req.status == 'pending' %}
+                                {% if session.role == 'admin' %}
+                                <div class="d-inline-flex gap-2">
+                                    <form action="{{ url_for('approve_delete_request', req_id=req.id) }}" method="POST" onsubmit="return confirm('APPROVE DELETION: Are you sure you want to permanently delete student \'{{ req.student_name }}\' and all fee history? This cannot be undone.');" class="d-inline">
+                                        <button type="submit" class="btn btn-success btn-sm px-2.5" title="Accept & Delete Student">
+                                            <i class="fa-solid fa-check me-1"></i> Accept
+                                        </button>
+                                    </form>
+                                    <form action="{{ url_for('reject_delete_request', req_id=req.id) }}" method="POST" onsubmit="return confirm('REJECT REQUEST: Decline this deletion request? Student \'{{ req.student_name }}\' will remain enrolled.');" class="d-inline">
+                                        <button type="submit" class="btn btn-outline-danger btn-sm px-2.5" title="Reject Request">
+                                            <i class="fa-solid fa-xmark me-1"></i> Reject
+                                        </button>
+                                    </form>
+                                </div>
+                                {% else %}
+                                <span class="text-secondary small fst-italic">Waiting for Admin</span>
+                                {% endif %}
+                            {% else %}
+                                <span class="text-muted small">{{ req.actioned_at or req.status|capitalize }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="8" class="text-center text-secondary py-5">
+                            <i class="fa-solid fa-clipboard-check d-block fs-3 mb-3 text-muted"></i>
+                            No deletion requests found in this view.
+                        </td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

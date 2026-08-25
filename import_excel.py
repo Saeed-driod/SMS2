@@ -63,8 +63,11 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             father_name TEXT,
+            phone_number TEXT,
             class TEXT NOT NULL,
             monthly_fee REAL NOT NULL,
+            annual_charges REAL DEFAULT 0,
+            opening_arrears REAL DEFAULT 0,
             start_month INTEGER DEFAULT 3,
             start_year INTEGER DEFAULT 2026,
             campus_id INTEGER REFERENCES campuses(id)
@@ -80,6 +83,27 @@ def init_db():
             year INTEGER NOT NULL,
             paid_amount REAL NOT NULL,
             date_paid TEXT NOT NULL,
+            payment_mode TEXT DEFAULT 'Voucher',
+            reference_no TEXT,
+            notes TEXT,
+            collected_by TEXT,
+            campus_id INTEGER REFERENCES campuses(id),
+            FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE CASCADE
+        )
+    ''')
+
+    # Create annual_charges_payments table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS annual_charges_payments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id INTEGER NOT NULL,
+            year INTEGER NOT NULL,
+            paid_amount REAL NOT NULL,
+            date_paid TEXT NOT NULL,
+            payment_mode TEXT DEFAULT 'Voucher',
+            reference_no TEXT,
+            notes TEXT,
+            collected_by TEXT,
             campus_id INTEGER REFERENCES campuses(id),
             FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE CASCADE
         )
@@ -104,45 +128,99 @@ def init_db():
         )
     ''')
     
-    # Insert default campuses
-    default_campuses = [
-        ('Al-Rehman Campus, Okara', 'campus_1'),
-        ('Main Campus, Lahore', 'campus_2'),
-        ('Model Town Campus, Okara', 'campus_3'),
-        ('Sahiwal Campus', 'campus_4'),
-        ('Faisalabad Campus', 'campus_5'),
-        ('Multan Campus', 'campus_6'),
-        ('Gujranwala Campus', 'campus_7'),
-        ('Sialkot Campus', 'campus_8')
-    ]
-    for name, code in default_campuses:
-        cursor.execute("INSERT OR IGNORE INTO campuses (name, code) VALUES (?, ?)", (name, code))
+    # Create sos_materials table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS sos_materials (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            description TEXT,
+            class_name TEXT NOT NULL,
+            filename TEXT NOT NULL,
+            filepath TEXT NOT NULL,
+            date_uploaded TEXT NOT NULL
+        )
+    ''')
+    
+    # Create student_delete_requests table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS student_delete_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id INTEGER NOT NULL,
+            student_name TEXT NOT NULL,
+            student_father_name TEXT,
+            student_class TEXT NOT NULL,
+            student_campus_id INTEGER NOT NULL,
+            requested_by_user TEXT NOT NULL,
+            requested_at TEXT NOT NULL,
+            reason TEXT,
+            status TEXT DEFAULT 'pending',
+            actioned_by_user TEXT,
+            actioned_at TEXT,
+            FOREIGN KEY (student_campus_id) REFERENCES campuses(id)
+        )
+    ''')
+
+    # Create promotion_history table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS promotion_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id INTEGER NOT NULL,
+            student_name TEXT NOT NULL,
+            from_class TEXT NOT NULL,
+            to_class TEXT NOT NULL,
+            previous_fee REAL NOT NULL,
+            new_fee REAL NOT NULL,
+            new_start_month INTEGER NOT NULL,
+            new_start_year INTEGER NOT NULL,
+            promoted_by_user TEXT NOT NULL,
+            promoted_at TEXT NOT NULL,
+            campus_id INTEGER REFERENCES campuses(id)
+        )
+    ''')
+    
+    # Check if already seeded (by flag or existing settings entries)
+    cursor.execute("SELECT value FROM settings WHERE key = 'db_seeded'")
+    seeded = cursor.fetchone()
+    if seeded and seeded[0] == '1':
+        conn.close()
+        return
         
-    # Get default campus ID
-    cursor.execute("SELECT id FROM campuses WHERE code = 'campus_1'")
-    default_campus_id = cursor.fetchone()[0]
-    
-    # Insert default admin user if not exists (Head office admin has NULL campus_id)
-    cursor.execute("INSERT OR IGNORE INTO users (username, password, role) VALUES (?, ?, ?)", 
-                   ('admin', 'pbkdf2:sha256:600000$admin_salt$cb2422ba14a80696f8a846f5c88b89cfd0b2cb612a4f00dbccbf5be5d3c01c0b', 'admin'))
-    
-    # Insert operators for each campus
-    for i in range(1, 9):
-        username = f"operator{i}"
-        password = f"operator{i}"
-        cursor.execute("SELECT id FROM campuses WHERE code = ?", (f"campus_{i}",))
-        c_id = cursor.fetchone()[0]
-        cursor.execute("SELECT id FROM users WHERE username = ?", (username,))
-        if not cursor.fetchone():
-            cursor.execute("INSERT INTO users (username, password, campus_id, role) VALUES (?, ?, ?, 'operator')",
-                           (username, password, c_id))
+    cursor.execute("SELECT COUNT(*) FROM campuses")
+    campus_count = cursor.fetchone()[0]
+
+    cursor.execute("SELECT COUNT(*) FROM users")
+    user_count = cursor.fetchone()[0]
+
+    # Only insert sample default campuses if table is completely empty
+    if campus_count == 0:
+        default_campuses = [
+            ('Al-Rehman Campus, Okara', 'campus_1'),
+            ('Main Campus, Lahore', 'campus_2'),
+            ('Model Town Campus, Okara', 'campus_3'),
+            ('Sahiwal Campus', 'campus_4'),
+            ('Faisalabad Campus', 'campus_5'),
+            ('Multan Campus', 'campus_6'),
+            ('Gujranwala Campus', 'campus_7'),
+            ('Sialkot Campus', 'campus_8')
+        ]
+        for name, code in default_campuses:
+            cursor.execute("INSERT OR IGNORE INTO campuses (name, code) VALUES (?, ?)", (name, code))
             
+    # Insert default admin user if not exists
+    if user_count == 0:
+        cursor.execute("INSERT OR IGNORE INTO users (username, password, role) VALUES (?, ?, ?)", 
+                       ('admin', 'pbkdf2:sha256:600000$admin_salt$cb2422ba14a80696f8a846f5c88b89cfd0b2cb612a4f00dbccbf5be5d3c01c0b', 'admin'))
+
+    # Mark as permanently seeded so server restarts never resurrect deleted campuses
+    cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('db_seeded', '1')")
+
     # Insert default settings
     default_settings = [
-        ('school_name', 'Allied School Al-Rehman Campus, Okara'),
+        ('school_name', 'Alliedian School Al-Rehman Campus, Okara'),
         ('bank_name', 'MCB Bank Ltd (A/C: 1234-5678-9)'),
         ('due_day', '10'),
-        ('late_fee', '100')
+        ('late_fee', '100'),
+        ('db_seeded', '1')
     ]
     for key, val in default_settings:
         cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, val))

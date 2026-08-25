@@ -1,0 +1,357 @@
+{% extends 'base.html' %}
+
+{% block title %}Class Promotion Studio - School Management Studio{% endblock %}
+
+{% block content %}
+<div class="row align-items-center mb-4">
+    <div class="col-md-7">
+        <h1 class="page-title mb-1"><i class="fa-solid fa-graduation-cap text-primary me-2"></i>Academic Session & Class Promotion</h1>
+        <p class="text-secondary small mb-0">Promote students to the next grade at the end of session, update tuition fees, and roll over billing periods.</p>
+    </div>
+    <div class="col-md-5 text-md-end mt-3 mt-md-0">
+        <a href="{{ url_for('students_view') }}" class="btn btn-secondary btn-sm px-3">
+            <i class="fa-solid fa-arrow-left me-1"></i> Back to Registry
+        </a>
+    </div>
+</div>
+
+<!-- Tab Navigation -->
+<div class="glass-panel mb-4 p-2">
+    <ul class="nav nav-pills custom-nav-pills" id="promotionTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="class-wise-tab" data-bs-toggle="pill" data-bs-target="#class-wise-pane" type="button" role="tab">
+                <i class="fa-solid fa-user-check me-1"></i> Class-by-Class Promotion
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="batch-tab" data-bs-toggle="pill" data-bs-target="#batch-pane" type="button" role="tab">
+                <i class="fa-solid fa-arrows-spin me-1"></i> Whole-School Session Rollover
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="history-tab" data-bs-toggle="pill" data-bs-target="#history-pane" type="button" role="tab">
+                <i class="fa-solid fa-clock-rotate-left me-1"></i> Promotion Audit Log ({{ promotion_history|length }})
+            </button>
+        </li>
+    </ul>
+</div>
+
+<div class="tab-content" id="promotionTabsContent">
+    <!-- TAB 1: CLASS-WISE PROMOTION -->
+    <div class="tab-pane fade show active" id="class-wise-pane" role="tabpanel">
+        <div class="row g-4">
+            <!-- Left Config Panel -->
+            <div class="col-lg-4">
+                <div class="glass-panel mb-4">
+                    <h5 class="text-white mb-3 fs-6 fw-bold"><i class="fa-solid fa-sliders text-info me-2"></i>1. Select Class & Destination</h5>
+                    
+                    <!-- Form for switching Source Class (GET) -->
+                    <form method="GET" action="{{ url_for('students_promotion') }}" class="mb-4">
+                        <label class="form-label">Current Source Class</label>
+                        <div class="input-group">
+                            <select class="form-select" name="source_class" onchange="this.form.submit()">
+                                {% for c in classes %}
+                                <option value="{{ c }}" {% if source_class == c %}selected{% endif %}>Class {{ c }}</option>
+                                {% endfor %}
+                            </select>
+                            <button type="submit" class="btn btn-secondary btn-sm"><i class="fa-solid fa-magnifying-glass"></i></button>
+                        </div>
+                    </form>
+
+                    <!-- Promotion Form (POST) -->
+                    <form method="POST" action="{{ url_for('students_promotion') }}" id="promoteForm">
+                        <input type="hidden" name="source_class" value="{{ source_class }}">
+                        
+                        <div class="mb-3">
+                            <label for="target_class" class="form-label">Promote To Next Class <span class="text-danger">*</span></label>
+                            <select class="form-select" id="target_class" name="target_class" required>
+                                {% for c in classes %}
+                                <option value="{{ c }}" {% if suggested_target_class == c %}selected{% endif %}>Class {{ c }}</option>
+                                {% endfor %}
+                                <option value="Graduate" {% if suggested_target_class == 'Graduate' %}selected{% endif %}>Graduate / Alumni (Passed Out)</option>
+                            </select>
+                            <div class="form-text text-secondary small">Automatically suggested based on standard school grade sequence.</div>
+                        </div>
+
+                        <hr class="border-secondary opacity-25 my-3">
+
+                        <h5 class="text-white mb-3 fs-6 fw-bold"><i class="fa-solid fa-coins text-warning me-2"></i>2. Tuition Fee Rule</h5>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Fee Adjustment Mode</label>
+                            <select class="form-select" id="fee_mode" name="fee_mode" onchange="handleFeeModeChange()">
+                                <option value="keep" selected>Keep Student's Current Fee (No Change)</option>
+                                <option value="fixed">Set New Fixed Tuition Fee (Rs.)</option>
+                                <option value="increase_fixed">Increase by Fixed Amount (+Rs.)</option>
+                                <option value="increase_percent">Increase by Percentage (+%)</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3 d-none" id="fee_value_container">
+                            <label for="fee_value" class="form-label" id="fee_value_label">Amount / Percentage</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-transparent border-end-0 text-secondary" id="fee_prefix" style="border: 1px solid var(--glass-border);">Rs.</span>
+                                <input type="number" step="any" class="form-control border-start-0" id="fee_value" name="fee_value" placeholder="e.g. 500" value="0">
+                            </div>
+                        </div>
+
+                        <hr class="border-secondary opacity-25 my-3">
+
+                        <h5 class="text-white mb-3 fs-6 fw-bold"><i class="fa-solid fa-calendar-days text-success me-2"></i>3. New Session Billing Start</h5>
+                        
+                        <div class="row g-2 mb-4">
+                            <div class="col-6">
+                                <label for="new_start_month" class="form-label">Start Month</label>
+                                <select class="form-select" id="new_start_month" name="new_start_month">
+                                    {% for val, name in months.items() %}
+                                    <option value="{{ val }}" {% if val == 3 %}selected{% endif %}>{{ name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-6">
+                                <label for="new_start_year" class="form-label">Start Year</label>
+                                <select class="form-select" id="new_start_year" name="new_start_year">
+                                    {% for y in range(current_year, current_year + 3) %}
+                                    <option value="{{ y }}" {% if y == current_year %}selected{% endif %}>{{ y }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary w-100 py-2" id="submitPromoteBtn" onclick="return confirm('Confirm Class Promotion: Promote all checked students to the target class?');">
+                            <i class="fa-solid fa-turn-up me-1"></i> Promote Selected Students
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Right Student Checklist Panel -->
+            <div class="col-lg-8">
+                <div class="glass-panel">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3 pb-2 border-bottom border-secondary border-opacity-25">
+                        <div>
+                            <h5 class="text-white mb-0 fs-6 fw-bold">
+                                Students in <span class="badge badge-class">Class {{ source_class }}</span>
+                            </h5>
+                            <span class="text-secondary small">Total <strong class="text-white">{{ students|length }}</strong> enrolled students</span>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="toggleAllStudents(true)">
+                                <i class="fa-solid fa-check-double me-1"></i> Select All
+                            </button>
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="toggleAllStudents(false)">
+                                <i class="fa-solid fa-square-minus me-1"></i> Deselect All
+                            </button>
+                        </div>
+                    </div>
+
+                    {% if students %}
+                    <div class="table-responsive" style="max-height: 520px; overflow-y: auto;">
+                        <table class="table table-custom">
+                            <thead class="sticky-top" style="background: #0d1222;">
+                                <tr>
+                                    <th style="width: 40px;">
+                                        <input class="form-check-input" type="checkbox" id="masterCheckbox" checked onchange="toggleAllStudents(this.checked)">
+                                    </th>
+                                    <th>Student Info</th>
+                                    <th>Father Name</th>
+                                    {% if session.role == 'admin' and not active_campus_id %}
+                                    <th>Campus</th>
+                                    {% endif %}
+                                    <th>Current Monthly Fee</th>
+                                    <th>Session Since</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for s in students %}
+                                <tr>
+                                    <td>
+                                        <input class="form-check-input student-chk" type="checkbox" name="student_ids" value="{{ s.id }}" form="promoteForm" checked>
+                                    </td>
+                                    <td>
+                                        <div class="d-flex flex-column">
+                                            <span class="fw-bold text-white">{{ s.name }}</span>
+                                            <span class="text-muted" style="font-size: 0.72rem;">ID: #{{ s.id }}</span>
+                                        </div>
+                                    </td>
+                                    <td class="text-secondary">{{ s.father_name or '—' }}</td>
+                                    {% if session.role == 'admin' and not active_campus_id %}
+                                    <td>
+                                        <span class="badge bg-dark border border-secondary text-info">
+                                            <i class="fa-solid fa-school me-1" style="font-size: 10px;"></i>{{ s.campus_name }}
+                                        </span>
+                                    </td>
+                                    {% endif %}
+                                    <td><span class="badge badge-amount">Rs. {{ "{:,.0f}".format(s.monthly_fee) }}</span></td>
+                                    <td class="text-secondary small">{{ s.start_month }}/{{ s.start_year }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-5 text-secondary">
+                        <i class="fa-solid fa-users-slash fs-2 mb-3 text-muted d-block"></i>
+                        No students currently enrolled in <strong>Class {{ source_class }}</strong>.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TAB 2: WHOLE-SCHOOL BATCH ROLLOVER -->
+    <div class="tab-pane fade" id="batch-pane" role="tabpanel">
+        <div class="row justify-content-center">
+            <div class="col-lg-10">
+                <div class="glass-panel mb-4">
+                    <div class="text-center mb-4">
+                        <div class="avatar-circle mx-auto mb-3" style="width: 54px; height: 54px; font-size: 1.5rem; background: rgba(56, 189, 248, 0.15); border-color: rgba(56, 189, 248, 0.3); color: var(--accent-cyan);">
+                            <i class="fa-solid fa-arrows-spin"></i>
+                        </div>
+                        <h4 class="text-white fw-bold mb-1">Whole-School Academic Session Rollover</h4>
+                        <p class="text-secondary small max-w-600 mx-auto">
+                            Automatically promote all students in every class simultaneously one level up for the upcoming academic session.
+                        </p>
+                    </div>
+
+                    <!-- Flow Diagram Cards -->
+                    <div class="row g-2 mb-4 text-center">
+                        <div class="col-md-3 col-6">
+                            <div class="p-2 rounded border border-secondary border-opacity-25 bg-dark bg-opacity-50">
+                                <span class="text-muted small d-block">Early Years</span>
+                                <span class="fw-bold text-white small">PG <i class="fa-solid fa-arrow-right text-info mx-1"></i> Nursery <i class="fa-solid fa-arrow-right text-info mx-1"></i> Prep</span>
+                            </div>
+                        </div>
+                        <div class="col-md-3 col-6">
+                            <div class="p-2 rounded border border-secondary border-opacity-25 bg-dark bg-opacity-50">
+                                <span class="text-muted small d-block">Primary</span>
+                                <span class="fw-bold text-white small">One <i class="fa-solid fa-arrow-right text-info mx-1"></i> Two <i class="fa-solid fa-arrow-right text-info mx-1"></i> Three ...</span>
+                            </div>
+                        </div>
+                        <div class="col-md-3 col-6">
+                            <div class="p-2 rounded border border-secondary border-opacity-25 bg-dark bg-opacity-50">
+                                <span class="text-muted small d-block">Middle</span>
+                                <span class="fw-bold text-white small">Six <i class="fa-solid fa-arrow-right text-info mx-1"></i> Seven <i class="fa-solid fa-arrow-right text-info mx-1"></i> Eight</span>
+                            </div>
+                        </div>
+                        <div class="col-md-3 col-6">
+                            <div class="p-2 rounded border border-secondary border-opacity-25 bg-dark bg-opacity-50">
+                                <span class="text-muted small d-block">Matriculation</span>
+                                <span class="fw-bold text-white small">Nine <i class="fa-solid fa-arrow-right text-info mx-1"></i> Ten <i class="fa-solid fa-arrow-right text-info mx-1"></i> Graduate</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <form method="POST" action="{{ url_for('students_promotion_batch') }}" onsubmit="return confirm('DANGER / CONFIRMATION: You are about to promote ALL students across ALL classes to the next grade for the new academic session. Are you sure you want to execute whole-school rollover?');">
+                        <div class="row g-3 justify-content-center mb-4">
+                            <div class="col-md-4">
+                                <label for="batch_start_month" class="form-label">New Session Start Month</label>
+                                <select class="form-select" id="batch_start_month" name="batch_start_month">
+                                    {% for val, name in months.items() %}
+                                    <option value="{{ val }}" {% if val == 3 %}selected{% endif %}>{{ name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="batch_start_year" class="form-label">New Session Start Year</label>
+                                <select class="form-select" id="batch_start_year" name="batch_start_year">
+                                    {% for y in range(current_year, current_year + 3) %}
+                                    <option value="{{ y }}" {% if y == current_year %}selected{% endif %}>{{ y }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="text-center">
+                            <button type="submit" class="btn btn-warning px-4 py-2 text-dark fw-bold">
+                                <i class="fa-solid fa-bolt me-1"></i> Execute Whole-School Batch Rollover
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TAB 3: PROMOTION AUDIT LOG -->
+    <div class="tab-pane fade" id="history-pane" role="tabpanel">
+        <div class="glass-panel">
+            <h5 class="text-white mb-3 fs-6 fw-bold"><i class="fa-solid fa-history text-secondary me-2"></i>Recent Promotion History</h5>
+            <div class="table-responsive">
+                <table class="table table-custom">
+                    <thead>
+                        <tr>
+                            <th style="width: 70px;">#Log</th>
+                            <th>Student Name</th>
+                            <th>From Class</th>
+                            <th>To Class</th>
+                            <th>Fee Before</th>
+                            <th>Fee After</th>
+                            <th>New Billing Date</th>
+                            <th>Promoted By</th>
+                            <th>Timestamp</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if promotion_history %}
+                            {% for h in promotion_history %}
+                            <tr>
+                                <td class="text-secondary font-monospace">#{{ h.id }}</td>
+                                <td class="fw-bold text-white">{{ h.student_name }}</td>
+                                <td><span class="badge badge-class">{{ h.from_class }}</span></td>
+                                <td><span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-50"><i class="fa-solid fa-arrow-right me-1"></i>{{ h.to_class }}</span></td>
+                                <td class="text-secondary small">Rs. {{ "{:,.0f}".format(h.previous_fee) }}</td>
+                                <td class="text-success small fw-bold">Rs. {{ "{:,.0f}".format(h.new_fee) }}</td>
+                                <td class="text-secondary small">{{ h.new_start_month }}/{{ h.new_start_year }}</td>
+                                <td class="text-light small"><i class="fa-solid fa-user-tie me-1 text-secondary"></i>{{ h.promoted_by_user }}</td>
+                                <td class="text-secondary small">{{ h.promoted_at }}</td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="9" class="text-center text-secondary py-4">
+                                    <i class="fa-solid fa-clock-rotate-left d-block fs-3 mb-2 text-muted"></i>
+                                    No promotions recorded in audit history yet.
+                                </td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function toggleAllStudents(checked) {
+    const chks = document.querySelectorAll('.student-chk');
+    chks.forEach(c => c.checked = checked);
+    const master = document.getElementById('masterCheckbox');
+    if (master) master.checked = checked;
+}
+
+function handleFeeModeChange() {
+    const mode = document.getElementById('fee_mode').value;
+    const container = document.getElementById('fee_value_container');
+    const label = document.getElementById('fee_value_label');
+    const prefix = document.getElementById('fee_prefix');
+    
+    if (mode === 'keep') {
+        container.classList.add('d-none');
+    } else {
+        container.classList.remove('d-none');
+        if (mode === 'fixed') {
+            label.innerText = 'New Monthly Tuition Fee';
+            prefix.innerText = 'Rs.';
+        } else if (mode === 'increase_fixed') {
+            label.innerText = 'Amount to Add to Current Fee';
+            prefix.innerText = '+ Rs.';
+        } else if (mode === 'increase_percent') {
+            label.innerText = 'Percentage to Increase Fee';
+            prefix.innerText = '+ %';
+        }
+    }
+}
+</script>
+{% endblock %}

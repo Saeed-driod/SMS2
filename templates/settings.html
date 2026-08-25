@@ -5,7 +5,7 @@
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-md-8">
-        <h1 class="mb-4 font-weight-bold" style="font-family: 'Outfit'; font-weight: 850;"><i class="fa-solid fa-sliders text-secondary me-2"></i>System Settings</h1>
+        <h1 class="page-title mb-3"><i class="fa-solid fa-sliders text-secondary me-2"></i>System Settings</h1>
         
         <div class="glass-panel">
             <h5 class="mb-4 text-secondary text-uppercase small border-bottom border-light-subtle pb-2">
@@ -18,7 +18,7 @@
                     <div class="col-12">
                         <label for="school_name" class="form-label">School Name & Location</label>
                         <input type="text" class="form-control" id="school_name" name="school_name" value="{{ settings.get('school_name', '') }}" required>
-                        <div class="form-text text-secondary small">This name appears at the top of all printed challan vouchers. Use a comma to separate name and campus (e.g. Allied School, Al-Rehman Campus).</div>
+                        <div class="form-text text-secondary small">This name appears at the top of all printed challan vouchers. Use a comma to separate name and campus (e.g. Alliedian School, Al-Rehman Campus).</div>
                     </div>
                     
                     <!-- Bank Name -->
@@ -69,4 +69,60 @@
         </div>
     </div>
 </div>
+
+{% if session.role == 'admin' %}
+<div class="row justify-content-center mt-5">
+    <div class="col-md-8">
+        <div class="glass-panel border-danger-hover">
+            <h5 class="mb-4 text-white"><i class="fa-solid fa-calculator text-danger me-2"></i>Admin Bulk Fee & Annual Charges Utility</h5>
+            <p class="text-secondary small">Increase monthly tuition fees or annual charges for all students of a selected campus at the start of a new academic session. This operation performs batch updates and cannot be undone.</p>
+            
+            <form action="{{ url_for('settings_bulk_update') }}" method="POST" onsubmit="return confirm('WARNING: This will increase fees/annual charges for all matching students. Are you sure you want to proceed?');">
+                <div class="row g-3">
+                    <!-- Campus Selection -->
+                    <div class="col-md-6">
+                        <label for="bulk_campus_id" class="form-label">Select Target Campus</label>
+                        <select class="form-select" id="bulk_campus_id" name="campus_id" required>
+                            <option value="0">All Campuses (Consolidated)</option>
+                            {% for c in campuses_list %}
+                            <option value="{{ c.id }}">{{ c.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <!-- Update Target -->
+                    <div class="col-md-6">
+                        <label for="update_target" class="form-label">Fee Type to Update</label>
+                        <select class="form-select" id="update_target" name="update_target" required>
+                            <option value="monthly_fee">Monthly Tuition Fee</option>
+                            <option value="annual_charges">Annual Charges</option>
+                        </select>
+                    </div>
+                    
+                    <!-- Update Type -->
+                    <div class="col-md-6">
+                        <label for="update_type" class="form-label">Adjustment Type</label>
+                        <select class="form-select" id="update_type" name="update_type" required>
+                            <option value="percentage">Percentage Increase (%)</option>
+                            <option value="flat">Flat Amount Increase (Rs.)</option>
+                        </select>
+                    </div>
+                    
+                    <!-- Amount -->
+                    <div class="col-md-6">
+                        <label for="bulk_amount" class="form-label">Increase Value</label>
+                        <input type="number" step="any" min="0.01" class="form-control" id="bulk_amount" name="amount" placeholder="e.g. 10 for 10% or 200 for Rs. 200" required>
+                    </div>
+                    
+                    <div class="col-12 text-end mt-4">
+                        <button type="submit" class="btn btn-danger px-4">
+                            <i class="fa-solid fa-angles-up me-1"></i> Apply Bulk Increase
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
 {% endblock %}

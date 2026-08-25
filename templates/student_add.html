@@ -9,7 +9,7 @@
             <a href="{{ url_for('students_view') }}" class="btn btn-secondary btn-sm me-3 px-3">
                 <i class="fa-solid fa-arrow-left"></i> Back
             </a>
-            <h1 class="mb-0 font-weight-bold" style="font-family: 'Outfit'; font-weight: 850;">Enroll New Student</h1>
+            <h1 class="page-title mb-0">Enroll New Student</h1>
         </div>
         
         <div class="glass-panel">
@@ -25,6 +25,17 @@
                     <div class="col-md-6">
                         <label for="father_name" class="form-label">Father's Name</label>
                         <input type="text" class="form-control" id="father_name" name="father_name" placeholder="e.g. Farooq Ahmad">
+                    </div>
+
+                    <!-- Phone Number / Mobile -->
+                    <div class="col-md-6">
+                        <label for="phone_number" class="form-label">Phone Number / Mobile (WhatsApp)</label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-transparent border-end-0 border-light-subtle text-secondary" style="border: 1px solid var(--glass-border);">
+                                <i class="fa-solid fa-phone text-success"></i>
+                            </span>
+                            <input type="text" class="form-control border-start-0" id="phone_number" name="phone_number" placeholder="e.g. 0300-1234567">
+                        </div>
                     </div>
                     
                     <!-- Class -->
@@ -51,6 +62,18 @@
                             <input type="number" step="any" class="form-control border-start-0" id="annual_charges" name="annual_charges" placeholder="e.g. 1500" value="0" required>
                         </div>
                         <div class="form-text text-secondary small">Leave as 0 if not applicable.</div>
+                    </div>
+
+                    <!-- Previous Outstanding Arrears at Admission -->
+                    <div class="col-md-6">
+                        <label for="opening_arrears" class="form-label">Previous / Admission Arrears (Rs.)</label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-transparent border-end-0 border-light-subtle text-secondary" style="border: 1px solid var(--glass-border);">
+                                <i class="fa-solid fa-triangle-exclamation text-warning"></i>
+                            </span>
+                            <input type="number" step="any" class="form-control border-start-0" id="opening_arrears" name="opening_arrears" placeholder="e.g. 3500" value="0">
+                        </div>
+                        <div class="form-text text-secondary small">Any previous outstanding dues at the time of admission. Leave 0 if none.</div>
                     </div>
 
                     <!-- Campus Dropdown (Admins only) -->

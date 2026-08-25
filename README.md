@@ -1,6 +1,6 @@
-# Allied School Okara — Fee & Voucher Studio Guide
+# Alliedian School Okara — Fee & Voucher Studio Guide
 
-This guide provides details on the School Management & Fee Voucher Studio built for **Allied School Al-Rehman Campus, Okara**. It replaces the existing Excel fee sheet tracking system with a SQLite database-backed web dashboard.
+This guide provides details on the School Management & Fee Voucher Studio built for **Alliedian School Al-Rehman Campus, Okara**. It replaces the existing Excel fee sheet tracking system with a SQLite database-backed web dashboard.
 
 ---
 

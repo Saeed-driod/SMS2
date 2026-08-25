@@ -1,12 +1,12 @@
 {% extends 'base.html' %}
 
-{% block title %}Fee Collection - Allied School Okara{% endblock %}
+{% block title %}Fee Collection - Alliedian School Okara{% endblock %}
 
 {% block content %}
 <div class="row">
     <!-- Left Column: Search & Enter Form -->
     <div class="col-lg-6 mb-4">
-        <h1 class="mb-4 font-weight-bold" style="font-family: 'Outfit'; font-weight: 850;"><i class="fa-solid fa-receipt text-success me-2"></i>Fee Collection</h1>
+        <h1 class="page-title mb-3"><i class="fa-solid fa-receipt text-success me-2"></i>Fee Collection</h1>
         
         <div class="glass-panel">
             <h5 class="mb-4 text-secondary text-uppercase small">Enter Payment Record</h5>
@@ -94,8 +94,8 @@
                 </select>
 
                 {% if selected_student %}
-                <div class="mb-4">
-                    <label for="paid_amount" class="form-label">Paid Amount (Rs.)</label>
+                <div class="mb-3">
+                    <label for="paid_amount" class="form-label">Paid Amount (Rs.) <span class="text-danger">*</span></label>
                     <div class="input-group">
                         <span class="input-group-text bg-transparent border-end-0 border-light-subtle text-secondary" style="border: 1px solid var(--glass-border);">Rs.</span>
                         <input type="number" step="any" class="form-control border-start-0" id="paid_amount" name="paid_amount" placeholder="Enter amount paid" value="{{ arrears_info.total_payable if arrears_info else '' }}" required>
@@ -103,14 +103,46 @@
                     <div class="form-text text-secondary small" id="amount_hint">Defaults to total payable amount (Rs. {{ arrears_info.total_payable if arrears_info else 0 }}).</div>
                 </div>
 
-                <div class="mb-4">
-                    <label for="date_paid" class="form-label">Payment Date</label>
-                    <div class="input-group">
-                        <span class="input-group-text bg-transparent border-end-0 border-light-subtle text-secondary" style="border: 1px solid var(--glass-border);">
-                            <i class="fa-solid fa-calendar-days"></i>
-                        </span>
-                        <input type="date" class="form-control border-start-0" id="date_paid" name="date_paid" value="{{ current_date }}">
+                <!-- Payment Method / Mode Selector -->
+                <div class="mb-3">
+                    <label class="form-label">Payment Method / Mode <span class="text-danger">*</span></label>
+                    <div class="d-flex gap-2">
+                        <input type="radio" class="btn-check" name="payment_mode" id="mode_voucher" value="Voucher" checked autocomplete="off">
+                        <label class="btn btn-outline-secondary btn-sm flex-fill text-center py-2" for="mode_voucher">
+                            <i class="fa-solid fa-receipt me-1 text-success"></i> Voucher / Cash
+                        </label>
+
+                        <input type="radio" class="btn-check" name="payment_mode" id="mode_bank" value="Bank" autocomplete="off">
+                        <label class="btn btn-outline-secondary btn-sm flex-fill text-center py-2" for="mode_bank">
+                            <i class="fa-solid fa-building-columns me-1 text-info"></i> Bank Deposit
+                        </label>
+
+                        <input type="radio" class="btn-check" name="payment_mode" id="mode_online" value="Online" autocomplete="off">
+                        <label class="btn btn-outline-secondary btn-sm flex-fill text-center py-2" for="mode_online">
+                            <i class="fa-solid fa-mobile-screen me-1 text-warning"></i> Online / App
+                        </label>
                     </div>
+                </div>
+
+                <div class="row g-2 mb-3">
+                    <div class="col-md-6">
+                        <label for="reference_no" class="form-label">Receipt / Slip / Ref #</label>
+                        <input type="text" class="form-control" id="reference_no" name="reference_no" placeholder="e.g. MCB-10928, TID#992">
+                    </div>
+                    <div class="col-md-6">
+                        <label for="date_paid" class="form-label">Payment Date</label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-transparent border-end-0 border-light-subtle text-secondary" style="border: 1px solid var(--glass-border);">
+                                <i class="fa-solid fa-calendar-days"></i>
+                            </span>
+                            <input type="date" class="form-control border-start-0" id="date_paid" name="date_paid" value="{{ current_date }}">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    <label for="notes" class="form-label">Remarks / Notes (Optional)</label>
+                    <input type="text" class="form-control" id="notes" name="notes" placeholder="e.g. Paid by father via JazzCash, Challan counter">
                 </div>
 
                 <button type="submit" class="btn btn-primary w-100 py-2.5">
@@ -138,7 +170,11 @@
                 </div>
                 <div class="text-end">
                     <span class="badge badge-class fs-6 py-2 px-3">Class {{ selected_student.class }}</span>
-                    <div class="text-muted small mt-1 font-monospace">Student ID: {{ selected_student.id }}</div>
+                    <div class="mt-2">
+                        <a href="{{ url_for('fee_history', student_id=selected_student.id) }}" class="btn btn-outline-info btn-sm">
+                            <i class="fa-solid fa-book-bookmark me-1"></i> Student Ledger
+                        </a>
+                    </div>
                 </div>
             </div>
 

@@ -8,29 +8,13 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
-app.secret_key = 'allied_school_rehman_campus_key_secret_2026'
-# --- DATABASE PATH FOR VERCEL SERVERLESS ---
-import os
-import shutil
-if os.environ.get('VERCEL'):
-    DB_PATH = '/tmp/sms.db'
-    if not os.path.exists(DB_PATH):
-        source_db = os.path.join(os.path.dirname(__file__), 'sms.db')
-        if os.path.exists(source_db):
-            try:
-                shutil.copy(source_db, DB_PATH)
-            except Exception as e:
-                import import_excel
-                import_excel.init_db()
-        else:
-            import import_excel
-            import_excel.init_db()
-else:
-    DB_PATH = 'sms.db'
-# --------------------------------------------
+app.secret_key = 'alliedian_school_rehman_campus_key_secret_2026'
+DB_PATH = 'sms.db'
 UPLOAD_FOLDER = 'uploads'
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+SOS_UPLOAD_FOLDER = os.path.join(UPLOAD_FOLDER, 'sos')
+app.config['SOS_UPLOAD_FOLDER'] = SOS_UPLOAD_FOLDER
+os.makedirs(SOS_UPLOAD_FOLDER, exist_ok=True)
 
 MONTH_NUM_TO_NAME = {
     1: 'January', 2: 'February', 3: 'March', 4: 'April', 5: 'May', 6: 'June',
@@ -46,6 +30,7 @@ SHORT_MONTHS = {
 def get_db_connection():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 # Helper function to get campus settings
@@ -86,13 +71,36 @@ def login_required(f):
 def inject_campuses():
     if 'logged_in' in session:
         conn = get_db_connection()
-        campuses = conn.execute("SELECT * FROM campuses ORDER BY id").fetchall()
         
-        active_campus_id = None
+        # Ensure student_delete_requests table exists
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS student_delete_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                student_id INTEGER NOT NULL,
+                student_name TEXT NOT NULL,
+                student_father_name TEXT,
+                student_class TEXT NOT NULL,
+                student_campus_id INTEGER NOT NULL,
+                requested_by_user TEXT NOT NULL,
+                requested_at TEXT NOT NULL,
+                reason TEXT,
+                status TEXT DEFAULT 'pending',
+                actioned_by_user TEXT,
+                actioned_at TEXT,
+                FOREIGN KEY (student_campus_id) REFERENCES campuses(id)
+            )
+        ''')
+        
         if session.get('role') == 'admin':
+            campuses = conn.execute("SELECT * FROM campuses ORDER BY id").fetchall()
             active_campus_id = session.get('selected_campus_id')
+            pending_row = conn.execute("SELECT COUNT(*) FROM student_delete_requests WHERE status = 'pending'").fetchone()
+            pending_delete_count = pending_row[0] if pending_row else 0
         else:
+            campuses = conn.execute("SELECT * FROM campuses WHERE id = ?", (session.get('campus_id'),)).fetchall()
             active_campus_id = session.get('campus_id')
+            pending_row = conn.execute("SELECT COUNT(*) FROM student_delete_requests WHERE status = 'pending' AND student_campus_id = ?", (session.get('campus_id'),)).fetchone()
+            pending_delete_count = pending_row[0] if pending_row else 0
             
         active_campus_name = "All Campuses"
         if active_campus_id:
@@ -104,7 +112,8 @@ def inject_campuses():
         return {
             'campuses_list': campuses,
             'active_campus_id': active_campus_id,
-            'active_campus_name': active_campus_name
+            'active_campus_name': active_campus_name,
+            'pending_delete_count': pending_delete_count
         }
     return {}
 
@@ -114,6 +123,7 @@ def get_student_fee_details(student, target_month_name, target_year, months=1):
     monthly_fee = student['monthly_fee']
     start_month = student['start_month']
     start_year = student['start_year']
+    opening_arrears = float(student['opening_arrears'] or 0.0) if 'opening_arrears' in student.keys() else 0.0
     
     target_month_num = MONTH_NAME_TO_NUM.get(target_month_name, 3)
     
@@ -123,7 +133,7 @@ def get_student_fee_details(student, target_month_name, target_year, months=1):
     if months_diff < 0:
         months_diff = 0
     
-    total_due_prior = monthly_fee * months_diff
+    total_due_prior = opening_arrears + (monthly_fee * months_diff)
     
     conn = get_db_connection()
     payments = conn.execute(
@@ -161,6 +171,7 @@ def get_student_fee_details(student, target_month_name, target_year, months=1):
     
     return {
         'monthly_fee': monthly_fee,
+        'opening_arrears': opening_arrears,
         'arrears': arrears,
         'total_payable': total_payable,
         'paid_this_month': paid_target_month,
@@ -228,20 +239,23 @@ def delete_campus(campus_id):
         flash('Cannot delete the global campus view.', 'danger')
         return redirect(url_for('campuses_view'))
 
-    # Delete related records: students, fees, users for this campus
+    # Delete related records: students, fees, annual charges, delete requests, promotions, users for this campus
     conn = get_db_connection()
     cur = conn.cursor()
-    # Remove fees linked to students of this campus
+    cur.execute('DELETE FROM annual_charges_payments WHERE campus_id = ?', (campus_id,))
+    cur.execute('DELETE FROM student_delete_requests WHERE student_campus_id = ?', (campus_id,))
+    cur.execute('DELETE FROM promotion_history WHERE campus_id = ?', (campus_id,))
     cur.execute('DELETE FROM fees WHERE student_id IN (SELECT id FROM students WHERE campus_id = ?)', (campus_id,))
-    # Remove students
     cur.execute('DELETE FROM students WHERE campus_id = ?', (campus_id,))
-    # Remove users (operators) belonging to this campus
     cur.execute('DELETE FROM users WHERE campus_id = ?', (campus_id,))
-    # Finally delete the campus entry
     cur.execute('DELETE FROM campuses WHERE id = ?', (campus_id,))
     conn.commit()
     conn.close()
-    flash('Campus deleted successfully.', 'success')
+
+    if session.get('selected_campus_id') == campus_id:
+        session['selected_campus_id'] = None
+
+    flash('Campus and associated records deleted permanently.', 'success')
     return redirect(url_for('campuses_view'))
 
 
@@ -275,14 +289,14 @@ def dashboard():
     conn = get_db_connection()
     
     query_students = "SELECT COUNT(*) FROM students"
-    query_payments = "SELECT COUNT(*) FROM fees"
-    query_collected = "SELECT SUM(paid_amount) FROM fees"
+    query_payments = "SELECT COUNT(*) FROM fees f JOIN students s ON f.student_id = s.id"
+    query_collected = "SELECT SUM(f.paid_amount) FROM fees f JOIN students s ON f.student_id = s.id"
     params = []
     
     if campus_id:
         query_students += " WHERE campus_id = ?"
-        query_payments += " WHERE campus_id = ?"
-        query_collected += " WHERE campus_id = ?"
+        query_payments += " WHERE s.campus_id = ?"
+        query_collected += " WHERE s.campus_id = ?"
         params = [campus_id]
         
     student_count = conn.execute(query_students, params).fetchone()[0]
@@ -308,6 +322,23 @@ def dashboard():
     recent_query += " ORDER BY f.id DESC LIMIT 5"
     recent_payments = conn.execute(recent_query, params).fetchall()
     
+    # Get monthly collections for chart (last 6 months)
+    chart_query = '''
+        SELECT month, year, SUM(paid_amount) as total, MAX(date_paid) as max_date
+        FROM fees
+    '''
+    chart_params = []
+    if campus_id:
+        chart_query += " WHERE campus_id = ?"
+        chart_params = [campus_id]
+    chart_query += " GROUP BY year, month ORDER BY max_date DESC LIMIT 6"
+    
+    chart_rows = conn.execute(chart_query, chart_params).fetchall()
+    chart_rows = list(reversed(chart_rows))
+    
+    chart_labels = [f"{row['month']} {row['year']}" for row in chart_rows]
+    chart_values = [row['total'] for row in chart_rows]
+    
     conn.close()
     
     settings = get_campus_settings(campus_id)
@@ -321,9 +352,11 @@ def dashboard():
                            total_collected=total_collected,
                            class_breakdown=class_breakdown,
                            recent_payments=recent_payments,
-                           school_name=settings.get('school_name', 'Allied School'),
+                           school_name=settings.get('school_name', 'Alliedian School'),
                            current_month=current_month,
-                           current_year=current_year)
+                           current_year=current_year,
+                           chart_labels=chart_labels,
+                           chart_values=chart_values)
 
 @app.route('/students')
 @login_required
@@ -365,8 +398,8 @@ def students_view():
         params.append(campus_filter)
         
     if search:
-        query += " AND (s.name LIKE ? OR s.father_name LIKE ?)"
-        params.extend([f"%{search}%", f"%{search}%"])
+        query += " AND (s.name LIKE ? OR s.father_name LIKE ? OR s.phone_number LIKE ?)"
+        params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
         
     if class_filter:
         query += " AND s.class = ?"
@@ -378,6 +411,11 @@ def students_view():
     query += " ORDER BY s.class, s.name LIMIT ? OFFSET ?"
     params.extend([per_page, offset])
     students = conn.execute(query, params).fetchall()
+    
+    # Query pending delete requests to badge students in the view
+    pending_rows = conn.execute("SELECT student_id, id as request_id, reason, requested_at FROM student_delete_requests WHERE status = 'pending'").fetchall()
+    pending_delete_map = {r['student_id']: dict(r) for r in pending_rows}
+    
     conn.close()
     
     total_pages = (total_students + per_page - 1) // per_page
@@ -390,7 +428,8 @@ def students_view():
                            search=search,
                            class_filter=class_filter,
                            campus_filter=campus_filter,
-                           total_students=total_students)
+                           total_students=total_students,
+                           pending_delete_map=pending_delete_map)
 
 @app.route('/students/add', methods=['GET', 'POST'])
 @login_required
@@ -400,9 +439,11 @@ def student_add():
     if request.method == 'POST':
         name = request.form['name'].strip()
         father_name = request.form['father_name'].strip()
+        phone_number = request.form.get('phone_number', '').strip()
         student_class = request.form['class'].strip()
         monthly_fee = float(request.form['monthly_fee'])
-        annual_charges = float(request.form.get('annual_charges', 0))
+        annual_charges = float(request.form.get('annual_charges', 0) or 0)
+        opening_arrears = float(request.form.get('opening_arrears', 0) or 0)
         start_month = int(request.form['start_month'])
         start_year = int(request.form['start_year'])
         
@@ -417,9 +458,9 @@ def student_add():
             
         conn = get_db_connection()
         conn.execute('''
-            INSERT INTO students (name, father_name, class, monthly_fee, annual_charges, start_month, start_year, campus_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (name, father_name, student_class, monthly_fee, annual_charges, start_month, start_year, student_campus_id))
+            INSERT INTO students (name, father_name, phone_number, class, monthly_fee, annual_charges, opening_arrears, start_month, start_year, campus_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (name, father_name, phone_number, student_class, monthly_fee, annual_charges, opening_arrears, start_month, start_year, student_campus_id))
         conn.commit()
         conn.close()
         
@@ -455,9 +496,11 @@ def student_edit(id):
     if request.method == 'POST':
         name = request.form['name'].strip()
         father_name = request.form['father_name'].strip()
+        phone_number = request.form.get('phone_number', '').strip()
         student_class = request.form['class'].strip()
         monthly_fee = float(request.form['monthly_fee'])
-        annual_charges = float(request.form.get('annual_charges', 0))
+        annual_charges = float(request.form.get('annual_charges', 0) or 0)
+        opening_arrears = float(request.form.get('opening_arrears', 0) or 0)
         start_month = int(request.form['start_month'])
         start_year = int(request.form['start_year'])
         
@@ -472,9 +515,9 @@ def student_edit(id):
             
         conn.execute('''
             UPDATE students 
-            SET name = ?, father_name = ?, class = ?, monthly_fee = ?, annual_charges = ?, start_month = ?, start_year = ?, campus_id = ?
+            SET name = ?, father_name = ?, phone_number = ?, class = ?, monthly_fee = ?, annual_charges = ?, opening_arrears = ?, start_month = ?, start_year = ?, campus_id = ?
             WHERE id = ?
-        ''', (name, father_name, student_class, monthly_fee, annual_charges, start_month, start_year, student_campus_id, id))
+        ''', (name, father_name, phone_number, student_class, monthly_fee, annual_charges, opening_arrears, start_month, start_year, student_campus_id, id))
         conn.commit()
         conn.close()
         
@@ -499,11 +542,385 @@ def student_delete(id):
         flash('Access Denied.', 'danger')
         return redirect(url_for('students_view'))
         
-    conn.execute("DELETE FROM students WHERE id = ?", (id,))
+    if session.get('role') != 'admin':
+        # Campus operator: Submit deletion request for Admin review
+        existing_req = conn.execute(
+            "SELECT id FROM student_delete_requests WHERE student_id = ? AND status = 'pending'",
+            (id,)
+        ).fetchone()
+        if existing_req:
+            conn.close()
+            flash(f'A deletion request for student "{student["name"]}" is already pending Admin approval.', 'warning')
+            return redirect(url_for('students_view'))
+            
+        reason = request.form.get('reason', '').strip() or 'Deletion requested by campus'
+        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        conn.execute('''
+            INSERT INTO student_delete_requests 
+            (student_id, student_name, student_father_name, student_class, student_campus_id, requested_by_user, requested_at, reason, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+        ''', (id, student['name'], student['father_name'], student['class'], student['campus_id'], session.get('username', 'operator'), now_str, reason))
+        conn.commit()
+        conn.close()
+        flash(f'Deletion request for student "{student["name"]}" submitted to Admin. The student will be removed once the Admin approves.', 'info')
+        return redirect(url_for('students_view'))
+    else:
+        # Admin direct delete
+        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        conn.execute('''
+            UPDATE student_delete_requests 
+            SET status = 'approved', actioned_by_user = ?, actioned_at = ? 
+            WHERE student_id = ? AND status = 'pending'
+        ''', (session.get('username', 'admin'), now_str, id))
+        
+        conn.execute("DELETE FROM students WHERE id = ?", (id,))
+        conn.commit()
+        conn.close()
+        flash(f'Student "{student["name"]}" record deleted successfully.', 'success')
+        return redirect(url_for('students_view'))
+
+@app.route('/students/delete-requests')
+@login_required
+def delete_requests_view():
+    status_filter = request.args.get('status', 'pending').strip()
+    active_campus_id = get_active_campus_id()
+    conn = get_db_connection()
+    
+    query = '''
+        SELECT r.*, c.name as campus_name 
+        FROM student_delete_requests r
+        LEFT JOIN campuses c ON r.student_campus_id = c.id
+        WHERE 1=1
+    '''
+    params = []
+    
+    if session.get('role') != 'admin':
+        query += " AND r.student_campus_id = ?"
+        params.append(session.get('campus_id'))
+    elif active_campus_id:
+        query += " AND r.student_campus_id = ?"
+        params.append(active_campus_id)
+        
+    if status_filter and status_filter != 'all':
+        query += " AND r.status = ?"
+        params.append(status_filter)
+        
+    query += " ORDER BY r.id DESC"
+    requests_list = conn.execute(query, params).fetchall()
+    
+    # Count queries for tabs
+    count_base = "SELECT COUNT(*) FROM student_delete_requests WHERE 1=1"
+    count_params = []
+    if session.get('role') != 'admin':
+        count_base += " AND student_campus_id = ?"
+        count_params.append(session.get('campus_id'))
+    elif active_campus_id:
+        count_base += " AND student_campus_id = ?"
+        count_params.append(active_campus_id)
+        
+    pending_count = conn.execute(count_base + " AND status = 'pending'", count_params).fetchone()[0]
+    approved_count = conn.execute(count_base + " AND status = 'approved'", count_params).fetchone()[0]
+    rejected_count = conn.execute(count_base + " AND status = 'rejected'", count_params).fetchone()[0]
+    all_count = conn.execute(count_base, count_params).fetchone()[0]
+    
+    conn.close()
+    return render_template('delete_requests.html',
+                           requests=requests_list,
+                           status_filter=status_filter,
+                           pending_count=pending_count,
+                           approved_count=approved_count,
+                           rejected_count=rejected_count,
+                           all_count=all_count)
+
+@app.route('/students/delete-requests/<int:req_id>/approve', methods=['POST'])
+@login_required
+def approve_delete_request(req_id):
+    if session.get('role') != 'admin':
+        flash('Access Denied. Only Admin can approve student deletion requests.', 'danger')
+        return redirect(url_for('delete_requests_view'))
+        
+    conn = get_db_connection()
+    req = conn.execute("SELECT * FROM student_delete_requests WHERE id = ?", (req_id,)).fetchone()
+    if not req:
+        conn.close()
+        flash('Deletion request not found!', 'danger')
+        return redirect(url_for('delete_requests_view'))
+        
+    if req['status'] != 'pending':
+        conn.close()
+        flash(f'This request has already been marked as {req["status"]}.', 'warning')
+        return redirect(url_for('delete_requests_view'))
+        
+    now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    
+    # 1. Update request status to approved
+    conn.execute('''
+        UPDATE student_delete_requests 
+        SET status = 'approved', actioned_by_user = ?, actioned_at = ? 
+        WHERE id = ?
+    ''', (session.get('username', 'admin'), now_str, req_id))
+    
+    # 2. Delete student record from students table
+    conn.execute("DELETE FROM students WHERE id = ?", (req['student_id'],))
     conn.commit()
     conn.close()
-    flash('Student record deleted successfully.', 'success')
-    return redirect(url_for('students_view'))
+    
+    flash(f'Deletion request approved! Student "{req["student_name"]}" has been permanently deleted.', 'success')
+    return redirect(url_for('delete_requests_view'))
+
+@app.route('/students/delete-requests/<int:req_id>/reject', methods=['POST'])
+@login_required
+def reject_delete_request(req_id):
+    if session.get('role') != 'admin':
+        flash('Access Denied. Only Admin can reject student deletion requests.', 'danger')
+        return redirect(url_for('delete_requests_view'))
+        
+    conn = get_db_connection()
+    req = conn.execute("SELECT * FROM student_delete_requests WHERE id = ?", (req_id,)).fetchone()
+    if not req:
+        conn.close()
+        flash('Deletion request not found!', 'danger')
+        return redirect(url_for('delete_requests_view'))
+        
+    if req['status'] != 'pending':
+        conn.close()
+        flash(f'This request has already been marked as {req["status"]}.', 'warning')
+        return redirect(url_for('delete_requests_view'))
+        
+    now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    conn.execute('''
+        UPDATE student_delete_requests 
+        SET status = 'rejected', actioned_by_user = ?, actioned_at = ? 
+        WHERE id = ?
+    ''', (session.get('username', 'admin'), now_str, req_id))
+    conn.commit()
+    conn.close()
+    
+    flash(f'Deletion request for student "{req["student_name"]}" was rejected. Student record was preserved.', 'info')
+    return redirect(url_for('delete_requests_view'))
+
+STANDARD_CLASSES = ['PG', 'Nursery', 'Prep', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Graduate']
+CLASS_PROMOTION_MAP = {
+    'PG': 'Nursery',
+    'Nursery': 'Prep',
+    'Prep': 'One',
+    'One': 'Two',
+    'Two': 'Three',
+    'Three': 'Four',
+    'Four': 'Five',
+    'Five': 'Six',
+    'Six': 'Seven',
+    'Seven': 'Eight',
+    'Eight': 'Nine',
+    'Nine': 'Ten',
+    'Ten': 'Graduate'
+}
+
+@app.route('/students/promotion', methods=['GET', 'POST'])
+@login_required
+def students_promotion():
+    active_campus_id = get_active_campus_id()
+    conn = get_db_connection()
+
+    # Ensure promotion_history table exists
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS promotion_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id INTEGER NOT NULL,
+            student_name TEXT NOT NULL,
+            from_class TEXT NOT NULL,
+            to_class TEXT NOT NULL,
+            previous_fee REAL NOT NULL,
+            new_fee REAL NOT NULL,
+            new_start_month INTEGER NOT NULL,
+            new_start_year INTEGER NOT NULL,
+            promoted_by_user TEXT NOT NULL,
+            promoted_at TEXT NOT NULL,
+            campus_id INTEGER REFERENCES campuses(id)
+        )
+    ''')
+    
+    if request.method == 'POST':
+        source_class = request.form.get('source_class', '').strip()
+        target_class = request.form.get('target_class', '').strip()
+        selected_student_ids = request.form.getlist('student_ids')
+        fee_mode = request.form.get('fee_mode', 'keep')
+        fee_value = float(request.form.get('fee_value', 0) or 0)
+        new_start_month = int(request.form.get('new_start_month', 3))
+        new_start_year = int(request.form.get('new_start_year', datetime.now().year))
+        
+        if not source_class or not target_class:
+            conn.close()
+            flash('Both Source Class and Target Class are required for promotion!', 'danger')
+            return redirect(url_for('students_promotion'))
+            
+        if not selected_student_ids:
+            conn.close()
+            flash('No students were selected for promotion. Please check at least one student.', 'warning')
+            return redirect(url_for('students_promotion', source_class=source_class))
+            
+        promoted_count = 0
+        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        user_name = session.get('username', 'admin')
+        
+        for s_id_str in selected_student_ids:
+            s_id = int(s_id_str)
+            student = conn.execute("SELECT * FROM students WHERE id = ?", (s_id,)).fetchone()
+            if not student:
+                continue
+                
+            # Security check for operators
+            if session.get('role') != 'admin' and student['campus_id'] != session.get('campus_id'):
+                continue
+                
+            prev_fee = student['monthly_fee']
+            if fee_mode == 'fixed':
+                new_fee = fee_value if fee_value > 0 else prev_fee
+            elif fee_mode == 'increase_fixed':
+                new_fee = prev_fee + fee_value
+            elif fee_mode == 'increase_percent':
+                new_fee = round(prev_fee * (1 + fee_value / 100.0))
+            else:
+                new_fee = prev_fee
+                
+            # Update student record
+            conn.execute('''
+                UPDATE students 
+                SET class = ?, monthly_fee = ?, start_month = ?, start_year = ?
+                WHERE id = ?
+            ''', (target_class, new_fee, new_start_month, new_start_year, s_id))
+            
+            # Log in promotion history
+            conn.execute('''
+                INSERT INTO promotion_history 
+                (student_id, student_name, from_class, to_class, previous_fee, new_fee, new_start_month, new_start_year, promoted_by_user, promoted_at, campus_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (s_id, student['name'], source_class, target_class, prev_fee, new_fee, new_start_month, new_start_year, user_name, now_str, student['campus_id']))
+            
+            promoted_count += 1
+            
+        conn.commit()
+        conn.close()
+        flash(f'Successfully promoted {promoted_count} students from Class "{source_class}" to "{target_class}"!', 'success')
+        return redirect(url_for('students_promotion', source_class=target_class))
+        
+    # GET: Load class options, students in chosen source class, and history
+    db_classes_query = "SELECT DISTINCT class FROM students"
+    db_classes_params = []
+    if active_campus_id:
+        db_classes_query += " WHERE campus_id = ?"
+        db_classes_params = [active_campus_id]
+    db_classes_query += " ORDER BY class"
+    db_classes_rows = conn.execute(db_classes_query, db_classes_params).fetchall()
+    existing_classes = [r['class'] for r in db_classes_rows if r['class']]
+    
+    # Combined sorted list of classes
+    all_classes = list(dict.fromkeys(STANDARD_CLASSES + existing_classes))
+    
+    source_class = request.args.get('source_class', '').strip()
+    if not source_class and existing_classes:
+        source_class = existing_classes[0]
+    elif not source_class and all_classes:
+        source_class = all_classes[0]
+        
+    suggested_target_class = CLASS_PROMOTION_MAP.get(source_class, 'One')
+    
+    # Fetch students in source class
+    students_in_class = []
+    if source_class:
+        s_query = "SELECT s.*, c.name as campus_name FROM students s LEFT JOIN campuses c ON s.campus_id = c.id WHERE s.class = ?"
+        s_params = [source_class]
+        if active_campus_id:
+            s_query += " AND s.campus_id = ?"
+            s_params.append(active_campus_id)
+        s_query += " ORDER BY s.name"
+        students_in_class = conn.execute(s_query, s_params).fetchall()
+        
+    # Fetch recent promotion history
+    h_query = "SELECT h.*, c.name as campus_name FROM promotion_history h LEFT JOIN campuses c ON h.campus_id = c.id"
+    h_params = []
+    if session.get('role') != 'admin':
+        h_query += " WHERE h.campus_id = ?"
+        h_params.append(session.get('campus_id'))
+    elif active_campus_id:
+        h_query += " WHERE h.campus_id = ?"
+        h_params.append(active_campus_id)
+    h_query += " ORDER BY h.id DESC LIMIT 40"
+    promotion_history = conn.execute(h_query, h_params).fetchall()
+    
+    conn.close()
+    
+    current_year = datetime.now().year
+    
+    return render_template('promotion.html',
+                           classes=all_classes,
+                           source_class=source_class,
+                           suggested_target_class=suggested_target_class,
+                           students=students_in_class,
+                           promotion_history=promotion_history,
+                           months=MONTH_NUM_TO_NAME,
+                           current_year=current_year,
+                           class_map=CLASS_PROMOTION_MAP)
+
+@app.route('/students/promotion/batch', methods=['POST'])
+@login_required
+def students_promotion_batch():
+    active_campus_id = get_active_campus_id()
+    conn = get_db_connection()
+    
+    new_start_month = int(request.form.get('batch_start_month', 3))
+    new_start_year = int(request.form.get('batch_start_year', datetime.now().year))
+    now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    user_name = session.get('username', 'admin')
+    
+    # Process from highest class to lowest class in reverse order to avoid cascade overwrite
+    ordered_sequence = [
+        ('Ten', 'Graduate'),
+        ('Nine', 'Ten'),
+        ('Eight', 'Nine'),
+        ('Seven', 'Eight'),
+        ('Six', 'Seven'),
+        ('Five', 'Six'),
+        ('Four', 'Five'),
+        ('Three', 'Four'),
+        ('Two', 'Three'),
+        ('One', 'Two'),
+        ('Prep', 'One'),
+        ('Nursery', 'Prep'),
+        ('PG', 'Nursery')
+    ]
+    
+    total_promoted = 0
+    for from_c, to_c in ordered_sequence:
+        s_query = "SELECT id, name, monthly_fee, campus_id FROM students WHERE class = ?"
+        s_params = [from_c]
+        if active_campus_id:
+            s_query += " AND campus_id = ?"
+            s_params.append(active_campus_id)
+            
+        students = conn.execute(s_query, s_params).fetchall()
+        for s in students:
+            # Update student
+            conn.execute('''
+                UPDATE students 
+                SET class = ?, start_month = ?, start_year = ? 
+                WHERE id = ?
+            ''', (to_c, new_start_month, new_start_year, s['id']))
+            
+            # Log in history
+            conn.execute('''
+                INSERT INTO promotion_history 
+                (student_id, student_name, from_class, to_class, previous_fee, new_fee, new_start_month, new_start_year, promoted_by_user, promoted_at, campus_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (s['id'], s['name'], from_c, to_c, s['monthly_fee'], s['monthly_fee'], new_start_month, new_start_year, user_name, now_str, s['campus_id']))
+            
+            total_promoted += 1
+            
+    conn.commit()
+    conn.close()
+    
+    flash(f'Whole-School Academic Session Rollover Complete! Total {total_promoted} students across all classes have been successfully promoted to the next grade.', 'success')
+    return redirect(url_for('students_promotion'))
 
 @app.route('/fee/entry', methods=['GET', 'POST'])
 @login_required
@@ -551,6 +968,11 @@ def fee_entry():
                 flash('Access Denied.', 'danger')
                 return redirect(url_for('fee_entry'))
 
+            payment_mode = request.form.get('payment_mode', 'Voucher').strip()
+            reference_no = request.form.get('reference_no', '').strip()
+            notes = request.form.get('notes', '').strip()
+            collected_by = session.get('username', 'operator')
+
             if payment_type == 'annual':
                 # --- Annual Charges Payment ---
                 annual_year = int(request.form.get('annual_year', datetime.now().year))
@@ -560,16 +982,16 @@ def fee_entry():
                 ).fetchone()
                 if existing:
                     conn.execute(
-                        "UPDATE annual_charges_payments SET paid_amount = ?, date_paid = ? WHERE id = ?",
-                        (paid_amount, date_paid, existing['id'])
+                        "UPDATE annual_charges_payments SET paid_amount = ?, date_paid = ?, payment_mode = ?, reference_no = ?, notes = ?, collected_by = ? WHERE id = ?",
+                        (paid_amount, date_paid, payment_mode, reference_no, notes, collected_by, existing['id'])
                     )
-                    flash(f"Updated annual charges for {student_obj['name']} ({annual_year}): Rs. {paid_amount}", 'success')
+                    flash(f"Updated annual charges for {student_obj['name']} ({annual_year}): Rs. {paid_amount} via {payment_mode}", 'success')
                 else:
                     conn.execute('''
-                        INSERT INTO annual_charges_payments (student_id, year, paid_amount, date_paid, campus_id)
-                        VALUES (?, ?, ?, ?, ?)
-                    ''', (student_id, annual_year, paid_amount, date_paid, student_obj['campus_id']))
-                    flash(f"Recorded annual charges of Rs. {paid_amount} for {student_obj['name']} ({annual_year})", 'success')
+                        INSERT INTO annual_charges_payments (student_id, year, paid_amount, date_paid, payment_mode, reference_no, notes, collected_by, campus_id)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (student_id, annual_year, paid_amount, date_paid, payment_mode, reference_no, notes, collected_by, student_obj['campus_id']))
+                    flash(f"Recorded annual charges of Rs. {paid_amount} for {student_obj['name']} ({annual_year}) via {payment_mode}", 'success')
                 conn.commit()
                 conn.close()
                 return redirect(url_for('fee_entry', student_id=student_id))
@@ -586,16 +1008,16 @@ def fee_entry():
                 
                 if existing_payment:
                     conn.execute(
-                        "UPDATE fees SET paid_amount = ?, date_paid = ? WHERE id = ?",
-                        (paid_amount, date_paid, existing_payment['id'])
+                        "UPDATE fees SET paid_amount = ?, date_paid = ?, payment_mode = ?, reference_no = ?, notes = ?, collected_by = ? WHERE id = ?",
+                        (paid_amount, date_paid, payment_mode, reference_no, notes, collected_by, existing_payment['id'])
                     )
-                    flash(f"Updated fee record for {student_obj['name']} ({month} {year}): Rs. {paid_amount}", 'success')
+                    flash(f"Updated fee record for {student_obj['name']} ({month} {year}): Rs. {paid_amount} via {payment_mode}", 'success')
                 else:
                     conn.execute('''
-                        INSERT INTO fees (student_id, month, year, paid_amount, date_paid, campus_id)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    ''', (student_id, month, year, paid_amount, date_paid, student_obj['campus_id']))
-                    flash(f"Successfully recorded fee of Rs. {paid_amount} for {student_obj['name']} ({month} {year})", 'success')
+                        INSERT INTO fees (student_id, month, year, paid_amount, date_paid, payment_mode, reference_no, notes, collected_by, campus_id)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (student_id, month, year, paid_amount, date_paid, payment_mode, reference_no, notes, collected_by, student_obj['campus_id']))
+                    flash(f"Successfully recorded fee of Rs. {paid_amount} for {student_obj['name']} ({month} {year}) via {payment_mode}", 'success')
                     
                 conn.commit()
                 conn.close()
@@ -612,25 +1034,99 @@ def fee_entry():
                            years=[2025, 2026, 2027, 2028],
                            current_date=datetime.now().strftime('%Y-%m-%d'))
 
+@app.route('/students/<int:student_id>/ledger')
 @app.route('/fee/history/<int:student_id>')
 @login_required
 def fee_history(student_id):
     active_campus_id = get_active_campus_id()
     conn = get_db_connection()
-    student = conn.execute("SELECT * FROM students WHERE id = ?", (student_id,)).fetchone()
+    
+    student = conn.execute('''
+        SELECT s.*, c.name as campus_name 
+        FROM students s 
+        LEFT JOIN campuses c ON s.campus_id = c.id 
+        WHERE s.id = ?
+    ''', (student_id,)).fetchone()
     
     if not student or (active_campus_id and student['campus_id'] != active_campus_id):
         conn.close()
-        flash('Student not found or access denied!', 'danger')
+        flash('Student record not found or access denied!', 'danger')
         return redirect(url_for('students_view'))
         
-    payments = conn.execute(
-        "SELECT * FROM fees WHERE student_id = ? ORDER BY year DESC, id DESC",
-        (student_id,)
-    ).fetchall()
+    # Fetch monthly fee payments
+    monthly_payments = conn.execute('''
+        SELECT id, month, year, paid_amount, date_paid, 
+               COALESCE(payment_mode, 'Voucher') as payment_mode, 
+               reference_no, notes, collected_by, 'Monthly Fee' as payment_type
+        FROM fees 
+        WHERE student_id = ? 
+        ORDER BY date_paid DESC, id DESC
+    ''', (student_id,)).fetchall()
+    
+    # Fetch annual charges payments
+    annual_payments = conn.execute('''
+        SELECT id, 'Annual Charges' as month, year, paid_amount, date_paid, 
+               COALESCE(payment_mode, 'Voucher') as payment_mode, 
+               reference_no, notes, collected_by, 'Annual Charges' as payment_type
+        FROM annual_charges_payments 
+        WHERE student_id = ? 
+        ORDER BY date_paid DESC, id DESC
+    ''', (student_id,)).fetchall()
+    
+    # Combine all transactions and sort by date descending
+    all_transactions = []
+    for p in monthly_payments:
+        all_transactions.append(dict(p))
+    for a in annual_payments:
+        all_transactions.append(dict(a))
+        
+    all_transactions.sort(key=lambda x: (x['date_paid'] or '', x['id']), reverse=True)
+    
+    # Calculate Financial Totals & Payment Modes breakdown
+    total_paid = sum(t['paid_amount'] for t in all_transactions)
+    paid_voucher = sum(t['paid_amount'] for t in all_transactions if t['payment_mode'] in ('Voucher', 'Cash Counter', 'Cash', 'voucher'))
+    paid_bank = sum(t['paid_amount'] for t in all_transactions if t['payment_mode'] in ('Bank', 'Bank Deposit', 'Bank Transfer', 'bank'))
+    paid_online = sum(t['paid_amount'] for t in all_transactions if t['payment_mode'] in ('Online', 'Online Transfer', 'Mobile App', 'JazzCash', 'EasyPaisa', 'online'))
+    
+    # Calculate billing duration & total dues
+    curr_year = datetime.now().year
+    curr_month = datetime.now().month
+    start_m = student['start_month'] or 3
+    start_y = student['start_year'] or curr_year
+    
+    months_billed = (curr_year - start_y) * 12 + (curr_month - start_m) + 1
+    if months_billed < 0:
+        months_billed = 0
+        
+    opening_arrears = float(student['opening_arrears'] or 0.0) if 'opening_arrears' in student.keys() else 0.0
+    total_monthly_billed = months_billed * (student['monthly_fee'] or 0)
+    total_annual_billed = (student['annual_charges'] or 0) * max(1, (curr_year - start_y + 1))
+    total_billed = opening_arrears + total_monthly_billed + total_annual_billed
+    
+    balance_due = total_billed - total_paid
+    if balance_due < 0:
+        balance_due = 0
+        
+    completion_rate = round((total_paid / total_billed * 100) if total_billed > 0 else 100, 1)
+    
+    settings = get_campus_settings(student['campus_id'])
+    
     conn.close()
     
-    return render_template('fee_history.html', student=student, payments=payments)
+    return render_template('fee_history.html',
+                           student=student,
+                           transactions=all_transactions,
+                           total_paid=total_paid,
+                           paid_voucher=paid_voucher,
+                           paid_bank=paid_bank,
+                           paid_online=paid_online,
+                           total_billed=total_billed,
+                           opening_arrears=opening_arrears,
+                           balance_due=balance_due,
+                           months_billed=months_billed,
+                           completion_rate=completion_rate,
+                           school_name=settings.get('school_name', 'Alliedian School'),
+                           bank_name=settings.get('bank_name', 'Bank Account'))
 
 @app.route('/voucher/generate', methods=['GET', 'POST'])
 @login_required
@@ -733,7 +1229,6 @@ def voucher_print():
             query += " AND campus_id = ?"
             params.append(active_campus_id)
         students = conn.execute(query, params).fetchall()
-        conn.close()
 
         vouchers = []
         for student in students:
@@ -788,7 +1283,7 @@ def voucher_print():
             # No late fee if nothing is payable
             payable_after_due = payable_by_due + (late_fee if payable_by_due > 0 else 0)
             vouchers.append({
-                'school_name': settings.get('school_name', 'Allied School Al-Rehman Campus, Okara'),
+                'school_name': settings.get('school_name', 'Alliedian School Al-Rehman Campus, Okara'),
                 'bank_name': settings.get('bank_name', 'MCB Bank Limited'),
                 'student': student,
                 'paid_this_month': fee_details['paid_this_month'],
@@ -807,15 +1302,17 @@ def voucher_print():
                 'payable_after_due': payable_after_due,
                 'late_fee': late_fee if payable_by_due > 0 else 0
             })
+        conn.close()
         return render_template('voucher_class.html', vouchers=vouchers)
     else:
         # Single student path – retain original behaviour
         if not student_id:
+            conn.close()
             flash('Invalid parameters for voucher generation.', 'danger')
             return redirect(url_for('voucher_generate'))
         student = conn.execute("SELECT * FROM students WHERE id = ?", (student_id,)).fetchone()
-        conn.close()
         if not student or (active_campus_id and student['campus_id'] != active_campus_id):
+            conn.close()
             flash('Student not found or access denied.', 'danger')
             return redirect(url_for('voucher_generate'))
         settings = get_campus_settings(student['campus_id'])
@@ -869,7 +1366,7 @@ def voucher_print():
         payable_by_due = fee_details['remaining_payable'] + current_other_dues
         payable_after_due = payable_by_due + (late_fee if payable_by_due > 0 else 0)
         voucher_data = {
-            'school_name': settings.get('school_name', 'Allied School Al-Rehman Campus, Okara'),
+            'school_name': settings.get('school_name', 'Alliedian School Al-Rehman Campus, Okara'),
             'bank_name': settings.get('bank_name', 'MCB Bank Limited'),
             'student': student,
             'month': month,
@@ -887,6 +1384,7 @@ def voucher_print():
             'payable_after_due': payable_after_due,
             'late_fee': late_fee
         }
+        conn.close()
         return render_template('voucher.html', data=voucher_data)
 
 @app.route('/defaulters')
@@ -934,6 +1432,7 @@ def defaulters_view():
                 'id': s['id'],
                 'name': s['name'],
                 'father_name': s['father_name'],
+                'phone_number': s['phone_number'],
                 'class': s['class'],
                 'campus_name': s['campus_name'],
                 'monthly_fee': details['monthly_fee'],
@@ -1035,8 +1534,67 @@ def settings_view():
         
     settings_dict = get_campus_settings(active_campus_id)
     conn.close()
-    
     return render_template('settings.html', settings=settings_dict)
+
+@app.route('/settings/bulk-update', methods=['POST'])
+@login_required
+def settings_bulk_update():
+    if session.get('role') != 'admin':
+        flash('Access Denied. Only Head Office admin can bulk update fees.', 'danger')
+        return redirect(url_for('dashboard'))
+        
+    campus_id = request.form.get('campus_id', type=int)
+    update_target = request.form.get('update_target') # 'monthly_fee' or 'annual_charges'
+    update_type = request.form.get('update_type') # 'percentage' or 'flat'
+    amount = request.form.get('amount', type=float)
+    
+    if amount is None or amount <= 0:
+        flash('Please enter a valid positive increase amount.', 'danger')
+        return redirect(url_for('settings_view'))
+        
+    conn = get_db_connection()
+    
+    # Base query columns handling NULLs
+    if update_target == 'monthly_fee':
+        column = 'COALESCE(monthly_fee, 0)'
+        target_col = 'monthly_fee'
+    elif update_target == 'annual_charges':
+        column = 'COALESCE(annual_charges, 0)'
+        target_col = 'annual_charges'
+    else:
+        conn.close()
+        flash('Invalid update target selected.', 'danger')
+        return redirect(url_for('settings_view'))
+        
+    # Build update expression
+    if update_type == 'percentage':
+        update_expr = f"{target_col} = ROUND({column} * (1 + ? / 100))"
+    elif update_type == 'flat':
+        update_expr = f"{target_col} = {column} + ?"
+    else:
+        conn.close()
+        flash('Invalid update type selected.', 'danger')
+        return redirect(url_for('settings_view'))
+        
+    query = f"UPDATE students SET {update_expr}"
+    params = [amount]
+    
+    if campus_id: # If not 0 (which means All Campuses)
+        query += " WHERE campus_id = ?"
+        params.append(campus_id)
+        
+    cursor = conn.cursor()
+    cursor.execute(query, params)
+    updated_count = cursor.rowcount
+    conn.commit()
+    conn.close()
+    
+    target_name = "Monthly Fee" if update_target == 'monthly_fee' else "Annual Charges"
+    type_name = f"{amount}%" if update_type == 'percentage' else f"Rs. {amount}"
+    
+    flash(f"Successfully increased {target_name} by {type_name} for {updated_count} students!", 'success')
+    return redirect(url_for('settings_view'))
+
 
 @app.route('/import', methods=['GET', 'POST'])
 @login_required
@@ -1182,10 +1740,130 @@ def import_excel_file(filepath):
     conn.commit()
     conn.close()
 
-# Vercel serverless deployment runtime expects this explicitly
-handler = app
+@app.route('/sos')
+@login_required
+def sos_view():
+    class_filter = request.args.get('class_filter', '').strip()
+    search = request.args.get('search', '').strip()
+    
+    conn = get_db_connection()
+    
+    # Fetch unique classes available from students table to populate filter options
+    classes_query = "SELECT DISTINCT class FROM students ORDER BY class"
+    classes = [r['class'] for r in conn.execute(classes_query).fetchall()]
+    
+    # Fetch all SOS materials
+    query = "SELECT * FROM sos_materials WHERE 1=1"
+    params = []
+    
+    if class_filter:
+        query += " AND class_name = ?"
+        params.append(class_filter)
+        
+    if search:
+        query += " AND (title LIKE ? OR description LIKE ?)"
+        params.extend([f"%{search}%", f"%{search}%"])
+        
+    query += " ORDER BY id DESC"
+    materials = conn.execute(query, params).fetchall()
+    conn.close()
+    
+    return render_template('sos.html', 
+                           materials=materials, 
+                           classes=classes, 
+                           class_filter=class_filter, 
+                           search=search)
+
+@app.route('/sos/upload', methods=['POST'])
+@login_required
+def sos_upload():
+    if session.get('role') != 'admin':
+        flash('Access Denied. Only Head Office admin can upload study materials.', 'danger')
+        return redirect(url_for('sos_view'))
+        
+    title = request.form.get('title', '').strip()
+    description = request.form.get('description', '').strip()
+    class_name = request.form.get('class_name', '').strip()
+    
+    if 'file' not in request.files:
+        flash('No file selected!', 'danger')
+        return redirect(url_for('sos_view'))
+        
+    file = request.files['file']
+    if file.filename == '':
+        flash('No selected file!', 'danger')
+        return redirect(url_for('sos_view'))
+        
+    if not title or not class_name:
+        flash('Title and Class are required fields!', 'danger')
+        return redirect(url_for('sos_view'))
+        
+    if file:
+        filename = secure_filename(file.filename)
+        timestamp = datetime.now().strftime('%Y%m%d%H%M%S_')
+        unique_filename = timestamp + filename
+        filepath = os.path.join(app.config['SOS_UPLOAD_FOLDER'], unique_filename)
+        file.save(filepath)
+        
+        # Record in database
+        conn = get_db_connection()
+        conn.execute('''
+            INSERT INTO sos_materials (title, description, class_name, filename, filepath, date_uploaded)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (title, description, class_name, unique_filename, filepath, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+        conn.commit()
+        conn.close()
+        
+        flash(f'Study material "{title}" uploaded successfully for Class {class_name}!', 'success')
+        
+    return redirect(url_for('sos_view'))
+
+@app.route('/sos/download/<int:material_id>')
+@login_required
+def sos_download(material_id):
+    conn = get_db_connection()
+    material = conn.execute("SELECT * FROM sos_materials WHERE id = ?", (material_id,)).fetchone()
+    conn.close()
+    
+    if not material:
+        flash('Requested material not found!', 'danger')
+        return redirect(url_for('sos_view'))
+        
+    filepath = material['filepath']
+    if not os.path.exists(filepath):
+        flash('File not found on server!', 'danger')
+        return redirect(url_for('sos_view'))
+        
+    return send_file(filepath, as_attachment=True, download_name=material['filename'].split('_', 1)[-1])
+
+@app.route('/sos/delete/<int:material_id>', methods=['POST'])
+@login_required
+def sos_delete(material_id):
+    if session.get('role') != 'admin':
+        flash('Access Denied.', 'danger')
+        return redirect(url_for('sos_view'))
+        
+    conn = get_db_connection()
+    material = conn.execute("SELECT * FROM sos_materials WHERE id = ?", (material_id,)).fetchone()
+    
+    if material:
+        filepath = material['filepath']
+        if os.path.exists(filepath):
+            try:
+                os.remove(filepath)
+            except Exception as e:
+                pass
+        
+        conn.execute("DELETE FROM sos_materials WHERE id = ?", (material_id,))
+        conn.commit()
+        flash('Study material record deleted successfully.', 'success')
+    else:
+        flash('Material not found!', 'danger')
+        
+    conn.close()
+    return redirect(url_for('sos_view'))
 
 if __name__ == '__main__':
     import import_excel
     import_excel.init_db()
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=3013, debug=True)
