@@ -1,6 +1,8 @@
 import sqlite3
+import os
 
-DB_PATH = 'sms.db'
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(BASE_DIR, 'sms.db')
 
 def run_migration():
     conn = sqlite3.connect(DB_PATH)

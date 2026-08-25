@@ -1,4 +1,5 @@
 @echo off
+cd /d "%~dp0"
 title School Management ^& Fee Voucher Studio - Alliedian School Okara
 color 0B
 cls

@@ -44,6 +44,7 @@
                                 <th>Branch Name</th>
                                 <th>System Code</th>
                                 <th>Operator Account</th>
+                                <th>Enrolled Students</th>
                                 <th>Status</th>
                                 <th class="text-end">Actions</th>
                             </tr>
@@ -61,12 +62,23 @@
                                     </div>
                                 </td>
                                 <td>
+                                    {% if campus.student_count > 0 %}
+                                    <span class="badge bg-primary bg-opacity-25 text-info border border-info border-opacity-50">
+                                        <i class="fa-solid fa-user-graduate me-1"></i> {{ campus.student_count }} Students
+                                    </span>
+                                    {% else %}
+                                    <span class="badge bg-secondary bg-opacity-25 text-secondary">
+                                        0 Students
+                                    </span>
+                                    {% endif %}
+                                </td>
+                                <td>
                                     <span class="badge bg-success-custom text-success">
                                         <i class="fa-solid fa-circle-check me-1"></i> Active
                                     </span>
                                 </td>
                                 <td class="text-end">
-                                    <form method="POST" action="{{ url_for('delete_campus', campus_id=campus.id) }}" onsubmit="return confirm('Are you sure you want to permanently delete this campus and all its data?');" class="d-inline">
+                                    <form method="POST" action="{{ url_for('delete_campus', campus_id=campus.id) }}" onsubmit="return confirm('⚠️ WARNING: Deleting {{ campus.name }} will also remove its {{ campus.student_count }} enrolled students! Are you sure you want to proceed?');" class="d-inline">
                                         <button type="submit" class="btn btn-outline-danger btn-sm" title="Delete Campus">
                                             <i class="fa-solid fa-trash"></i>
                                         </button>

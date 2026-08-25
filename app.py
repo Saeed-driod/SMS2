@@ -9,8 +9,9 @@ from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 app.secret_key = 'alliedian_school_rehman_campus_key_secret_2026'
-DB_PATH = 'sms.db'
-UPLOAD_FOLDER = 'uploads'
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(BASE_DIR, 'sms.db')
+UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 SOS_UPLOAD_FOLDER = os.path.join(UPLOAD_FOLDER, 'sos')
 app.config['SOS_UPLOAD_FOLDER'] = SOS_UPLOAD_FOLDER
@@ -1488,7 +1489,13 @@ def campuses_view():
             except sqlite3.IntegrityError:
                 flash(f"Error: Campus code '{code}' already exists.", 'danger')
                 
-    campuses = conn.execute("SELECT * FROM campuses ORDER BY id").fetchall()
+    campuses = conn.execute('''
+        SELECT c.*, COUNT(s.id) as student_count 
+        FROM campuses c 
+        LEFT JOIN students s ON s.campus_id = c.id 
+        GROUP BY c.id 
+        ORDER BY c.id
+    ''').fetchall()
     conn.close()
     
     return render_template('campuses.html', campuses=campuses)

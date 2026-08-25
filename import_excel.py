@@ -4,13 +4,9 @@ import numpy as np
 import re
 import os
 
-# --- DATABASE PATH FOR VERCEL SERVERLESS ---
-if os.environ.get('VERCEL'):
-    DB_PATH = '/tmp/sms.db'
-else:
-    DB_PATH = 'sms.db'
-# --------------------------------------------
-EXCEL_PATH = 'Fee record 2026.xlsx'
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(BASE_DIR, 'sms.db')
+EXCEL_PATH = os.path.join(BASE_DIR, 'Fee record 2026.xlsx')
 
 MONTH_MAP = {
     'jan': ('January', 1),
@@ -244,9 +240,10 @@ def import_data():
     cursor.execute("DELETE FROM sqlite_sequence WHERE name IN ('students', 'fees')")
     conn.commit()
     
-    # Get default campus ID (we assign all imported students to the first campus by default)
-    cursor.execute("SELECT id FROM campuses WHERE code = 'campus_1'")
-    default_campus_id = cursor.fetchone()[0]
+    # Get default campus ID (we assign imported students to first campus by default)
+    cursor.execute("SELECT id FROM campuses ORDER BY id ASC LIMIT 1")
+    c_row = cursor.fetchone()
+    default_campus_id = c_row[0] if c_row else 1
     
     student_count = 0
     payment_count = 0
@@ -355,4 +352,3 @@ def import_data():
 
 if __name__ == '__main__':
     init_db()
-    import_data()
