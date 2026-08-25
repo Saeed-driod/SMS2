@@ -259,6 +259,32 @@ def delete_campus(campus_id):
     flash('Campus and associated records deleted permanently.', 'success')
     return redirect(url_for('campuses_view'))
 
+@app.route('/campuses/clear_data/<int:campus_id>', methods=['POST'])
+@login_required
+def clear_campus_data(campus_id):
+    if session.get('role') != 'admin':
+        flash('Access Denied. Only Admin can clear campus data.', 'danger')
+        return redirect(url_for('dashboard'))
+
+    conn = get_db_connection()
+    campus = conn.execute("SELECT * FROM campuses WHERE id = ?", (campus_id,)).fetchone()
+    if not campus:
+        conn.close()
+        flash('Campus not found.', 'danger')
+        return redirect(url_for('campuses_view'))
+
+    cur = conn.cursor()
+    cur.execute('DELETE FROM annual_charges_payments WHERE campus_id = ?', (campus_id,))
+    cur.execute('DELETE FROM student_delete_requests WHERE student_campus_id = ?', (campus_id,))
+    cur.execute('DELETE FROM promotion_history WHERE campus_id = ?', (campus_id,))
+    cur.execute('DELETE FROM fees WHERE campus_id = ? OR student_id IN (SELECT id FROM students WHERE campus_id = ?)', (campus_id, campus_id))
+    cur.execute('DELETE FROM students WHERE campus_id = ?', (campus_id,))
+    conn.commit()
+    conn.close()
+
+    flash(f"All student and fee records for '{campus['name']}' have been cleared successfully!", 'success')
+    return redirect(url_for('campuses_view'))
+
 
 
 

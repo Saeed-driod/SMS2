@@ -78,11 +78,20 @@
                                     </span>
                                 </td>
                                 <td class="text-end">
-                                    <form method="POST" action="{{ url_for('delete_campus', campus_id=campus.id) }}" onsubmit="return confirm('⚠️ WARNING: Deleting {{ campus.name }} will also remove its {{ campus.student_count }} enrolled students! Are you sure you want to proceed?');" class="d-inline">
-                                        <button type="submit" class="btn btn-outline-danger btn-sm" title="Delete Campus">
-                                            <i class="fa-solid fa-trash"></i>
-                                        </button>
-                                    </form>
+                                    <div class="d-inline-flex gap-2">
+                                        {% if campus.student_count > 0 %}
+                                        <form method="POST" action="{{ url_for('clear_campus_data', campus_id=campus.id) }}" onsubmit="return confirm('⚠️ Are you sure you want to clear all {{ campus.student_count }} students and fee records for {{ campus.name }}? The campus branch itself will remain intact.');" class="d-inline">
+                                            <button type="submit" class="btn btn-outline-warning btn-sm px-2.5" title="Clear all students & fee records of this branch">
+                                                <i class="fa-solid fa-broom me-1"></i> Clear Data
+                                            </button>
+                                        </form>
+                                        {% endif %}
+                                        <form method="POST" action="{{ url_for('delete_campus', campus_id=campus.id) }}" onsubmit="return confirm('⚠️ WARNING: Deleting {{ campus.name }} will remove the campus branch and its data! Are you sure?');" class="d-inline">
+                                            <button type="submit" class="btn btn-outline-danger btn-sm px-2.5" title="Delete Campus">
+                                                <i class="fa-solid fa-trash"></i>
+                                            </button>
+                                        </form>
+                                    </div>
                                 </td>
                             </tr>
                             {% endfor %}
