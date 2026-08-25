@@ -79,6 +79,9 @@
                                 </td>
                                 <td class="text-end">
                                     <div class="d-inline-flex gap-2">
+                                        <a href="{{ url_for('export_campus_excel', campus_id=campus.id) }}" class="btn btn-outline-success btn-sm px-2.5" title="Download complete Excel Report for {{ campus.name }}">
+                                            <i class="fa-solid fa-file-excel me-1"></i> Excel
+                                        </a>
                                         {% if campus.student_count > 0 %}
                                         <form method="POST" action="{{ url_for('clear_campus_data', campus_id=campus.id) }}" onsubmit="return confirm('⚠️ Are you sure you want to clear all {{ campus.student_count }} students and fee records for {{ campus.name }}? The campus branch itself will remain intact.');" class="d-inline">
                                             <button type="submit" class="btn btn-outline-warning btn-sm px-2.5" title="Clear all students & fee records of this branch">

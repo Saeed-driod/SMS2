@@ -9,6 +9,9 @@
         <p class="text-secondary small mb-0">Total Enrolled: <strong class="text-white">{{ total_students }}</strong> students</p>
     </div>
     <div class="col-md-6 text-md-end mt-3 mt-md-0">
+        <a href="{{ url_for('export_students_excel', class_filter=class_filter, campus_filter=campus_filter, search=search) }}" class="btn btn-outline-success btn-sm px-3 me-2" title="Download Excel Sheet of displayed students">
+            <i class="fa-solid fa-file-excel me-1"></i> Export Excel
+        </a>
         <a href="{{ url_for('students_promotion') }}" class="btn btn-secondary btn-sm px-3 me-2">
             <i class="fa-solid fa-graduation-cap me-1 text-info"></i> Class Promotion
         </a>

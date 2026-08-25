@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, session, send_file
 import sqlite3
 import os
+import io
 import re
 from datetime import datetime
 import pandas as pd
@@ -284,6 +285,253 @@ def clear_campus_data(campus_id):
 
     flash(f"All student and fee records for '{campus['name']}' have been cleared successfully!", 'success')
     return redirect(url_for('campuses_view'))
+
+
+def generate_excel_workbook(students, fees, annual_charges, title_name="Report"):
+    curr_month = MONTH_NUM_TO_NAME[datetime.now().month]
+    curr_year = datetime.now().year
+    
+    summary_data = []
+    for s in students:
+        details = get_student_fee_details(s, curr_month, curr_year)
+        summary_data.append({
+            'Student ID': s['id'],
+            'Student Name': s['name'],
+            'Father Name': s['father_name'] or '',
+            'Phone / WhatsApp': s['phone_number'] or '',
+            'Class / Grade': s['class'],
+            'Monthly Tuition Fee': s['monthly_fee'],
+            'Annual Charges': s['annual_charges'] or 0,
+            'Admission / Opening Arrears': s['opening_arrears'] or 0,
+            'Enrolled Since': f"{s['start_month']}/{s['start_year']}",
+            'Current Month Fee': details['monthly_fee'],
+            'Previous Arrears': details['arrears'],
+            'Total Payable': details['total_payable'],
+            'Paid This Month': details['paid_this_month'],
+            'Remaining Balance': details['remaining_payable']
+        })
+
+    df_summary = pd.DataFrame(summary_data) if summary_data else pd.DataFrame(columns=[
+        'Student ID', 'Student Name', 'Father Name', 'Phone / WhatsApp', 'Class / Grade', 
+        'Monthly Tuition Fee', 'Annual Charges', 'Admission / Opening Arrears', 'Enrolled Since', 
+        'Current Month Fee', 'Previous Arrears', 'Total Payable', 'Paid This Month', 'Remaining Balance'
+    ])
+
+    df_students = pd.DataFrame([dict(s) for s in students]) if students else pd.DataFrame(columns=[
+        'id', 'name', 'father_name', 'phone_number', 'class', 'monthly_fee', 'annual_charges', 
+        'opening_arrears', 'start_month', 'start_year'
+    ])
+    if not df_students.empty:
+        cols = ['id', 'name', 'father_name', 'phone_number', 'class', 'monthly_fee', 'annual_charges', 'opening_arrears', 'start_month', 'start_year']
+        cols = [c for c in cols if c in df_students.columns]
+        df_students = df_students[cols]
+        df_students.rename(columns={
+            'id': 'Student ID',
+            'name': 'Student Name',
+            'father_name': 'Father Name',
+            'phone_number': 'Phone / WhatsApp',
+            'class': 'Class / Grade',
+            'monthly_fee': 'Monthly Tuition Fee (Rs.)',
+            'annual_charges': 'Annual Charges (Rs.)',
+            'opening_arrears': 'Opening Arrears (Rs.)',
+            'start_month': 'Billing Start Month',
+            'start_year': 'Billing Start Year'
+        }, inplace=True)
+
+    df_fees = pd.DataFrame([dict(f) for f in fees]) if fees else pd.DataFrame(columns=[
+        'id', 'student_name', 'father_name', 'class', 'month', 'year', 'paid_amount', 
+        'date_paid', 'payment_mode', 'reference_no', 'collected_by', 'notes'
+    ])
+    if not df_fees.empty:
+        cols = ['id', 'student_name', 'father_name', 'class', 'month', 'year', 'paid_amount', 'date_paid', 'payment_mode', 'reference_no', 'collected_by', 'notes']
+        cols = [c for c in cols if c in df_fees.columns]
+        df_fees = df_fees[cols]
+        df_fees.rename(columns={
+            'id': 'Receipt #',
+            'student_name': 'Student Name',
+            'father_name': 'Father Name',
+            'class': 'Class',
+            'month': 'Fee Month',
+            'year': 'Fee Year',
+            'paid_amount': 'Paid Amount (Rs.)',
+            'date_paid': 'Payment Date',
+            'payment_mode': 'Payment Mode',
+            'reference_no': 'Ref / Slip #',
+            'collected_by': 'Collected By',
+            'notes': 'Remarks / Notes'
+        }, inplace=True)
+
+    df_annual = pd.DataFrame([dict(a) for a in annual_charges]) if annual_charges else pd.DataFrame(columns=[
+        'id', 'student_name', 'father_name', 'class', 'year', 'paid_amount', 
+        'date_paid', 'payment_mode', 'reference_no', 'collected_by', 'notes'
+    ])
+    if not df_annual.empty:
+        cols = ['id', 'student_name', 'father_name', 'class', 'year', 'paid_amount', 'date_paid', 'payment_mode', 'reference_no', 'collected_by', 'notes']
+        cols = [c for c in cols if c in df_annual.columns]
+        df_annual = df_annual[cols]
+        df_annual.rename(columns={
+            'id': 'Receipt #',
+            'student_name': 'Student Name',
+            'father_name': 'Father Name',
+            'class': 'Class',
+            'year': 'Year',
+            'paid_amount': 'Paid Amount (Rs.)',
+            'date_paid': 'Payment Date',
+            'payment_mode': 'Payment Mode',
+            'reference_no': 'Ref / Slip #',
+            'collected_by': 'Collected By',
+            'notes': 'Remarks / Notes'
+        }, inplace=True)
+
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df_summary.to_excel(writer, sheet_name='Fee Balances & Dues', index=False)
+        df_students.to_excel(writer, sheet_name='Students Directory', index=False)
+        df_fees.to_excel(writer, sheet_name='Monthly Fee Receipts', index=False)
+        df_annual.to_excel(writer, sheet_name='Annual Charges Receipts', index=False)
+
+        from openpyxl.styles import Font, PatternFill, Alignment
+        from openpyxl.utils import get_column_letter
+        
+        header_fill = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
+        header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+        
+        for sheet_name in writer.sheets:
+            ws = writer.sheets[sheet_name]
+            for cell in ws[1]:
+                cell.fill = header_fill
+                cell.font = header_font
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+                
+            for col in ws.columns:
+                max_len = max(len(str(cell.value or '')) for cell in col)
+                col_letter = get_column_letter(col[0].column)
+                ws.column_dimensions[col_letter].width = max(max_len + 4, 14)
+
+    output.seek(0)
+    return output
+
+
+@app.route('/campuses/export/<int:campus_id>')
+@login_required
+def export_campus_excel(campus_id):
+    if session.get('role') != 'admin' and session.get('campus_id') != campus_id:
+        flash('Access Denied. You cannot export data from another campus.', 'danger')
+        return redirect(url_for('dashboard'))
+
+    conn = get_db_connection()
+    campus = conn.execute("SELECT * FROM campuses WHERE id = ?", (campus_id,)).fetchone()
+    if not campus:
+        conn.close()
+        flash('Campus not found.', 'danger')
+        return redirect(url_for('campuses_view'))
+
+    campus_name = campus['name']
+    campus_code = campus['code']
+
+    students = conn.execute('''
+        SELECT id, name, father_name, phone_number, class, monthly_fee, annual_charges, 
+               opening_arrears, start_month, start_year, campus_id 
+        FROM students 
+        WHERE campus_id = ? 
+        ORDER BY class, name
+    ''', (campus_id,)).fetchall()
+
+    fees = conn.execute('''
+        SELECT f.id, s.name as student_name, s.father_name, s.class, 
+               f.month, f.year, f.paid_amount, f.date_paid, f.payment_mode, f.reference_no, 
+               f.collected_by, f.notes
+        FROM fees f
+        JOIN students s ON f.student_id = s.id
+        WHERE f.campus_id = ? OR s.campus_id = ?
+        ORDER BY f.date_paid DESC, f.id DESC
+    ''', (campus_id, campus_id)).fetchall()
+
+    annual_charges = conn.execute('''
+        SELECT a.id, s.name as student_name, s.father_name, s.class, 
+               a.year, a.paid_amount, a.date_paid, a.payment_mode, a.reference_no, 
+               a.collected_by, a.notes
+        FROM annual_charges_payments a
+        JOIN students s ON a.student_id = s.id
+        WHERE a.campus_id = ? OR s.campus_id = ?
+        ORDER BY a.date_paid DESC, a.id DESC
+    ''', (campus_id, campus_id)).fetchall()
+
+    conn.close()
+
+    output = generate_excel_workbook(students, fees, annual_charges, title_name=campus_name)
+    safe_code = re.sub(r'[^a-zA-Z0-9_-]', '_', campus_code)
+    filename = f"{safe_code}_Report_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+    return send_file(output, as_attachment=True, download_name=filename, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+@app.route('/students/export')
+@login_required
+def export_students_excel():
+    active_campus_id = get_active_campus_id()
+    search = request.args.get('search', '').strip()
+    class_filter = request.args.get('class_filter', '').strip()
+    campus_filter = request.args.get('campus_filter', type=int)
+
+    conn = get_db_connection()
+    query = '''
+        SELECT s.*, c.name as campus_name 
+        FROM students s
+        LEFT JOIN campuses c ON s.campus_id = c.id
+        WHERE 1=1
+    '''
+    params = []
+    
+    if active_campus_id:
+        query += " AND s.campus_id = ?"
+        params.append(active_campus_id)
+    elif campus_filter:
+        query += " AND s.campus_id = ?"
+        params.append(campus_filter)
+        
+    if search:
+        query += " AND (s.name LIKE ? OR s.father_name LIKE ? OR s.phone_number LIKE ?)"
+        params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
+        
+    if class_filter:
+        query += " AND s.class = ?"
+        params.append(class_filter)
+        
+    query += " ORDER BY s.class, s.name"
+    students = conn.execute(query, params).fetchall()
+
+    # Fetch corresponding fees and annual charges for these students
+    if students:
+        student_ids = [s['id'] for s in students]
+        placeholders = ','.join('?' * len(student_ids))
+        fees = conn.execute(f'''
+            SELECT f.id, s.name as student_name, s.father_name, s.class, 
+                   f.month, f.year, f.paid_amount, f.date_paid, f.payment_mode, f.reference_no, 
+                   f.collected_by, f.notes
+            FROM fees f
+            JOIN students s ON f.student_id = s.id
+            WHERE f.student_id IN ({placeholders})
+            ORDER BY f.date_paid DESC, f.id DESC
+        ''', student_ids).fetchall()
+
+        annual_charges = conn.execute(f'''
+            SELECT a.id, s.name as student_name, s.father_name, s.class, 
+                   a.year, a.paid_amount, a.date_paid, a.payment_mode, a.reference_no, 
+                   a.collected_by, a.notes
+            FROM annual_charges_payments a
+            JOIN students s ON a.student_id = s.id
+            WHERE a.student_id IN ({placeholders})
+            ORDER BY a.date_paid DESC, a.id DESC
+        ''', student_ids).fetchall()
+    else:
+        fees = []
+        annual_charges = []
+
+    conn.close()
+
+    output = generate_excel_workbook(students, fees, annual_charges, title_name="Students")
+    filename = f"Students_Export_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+    return send_file(output, as_attachment=True, download_name=filename, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 
 
