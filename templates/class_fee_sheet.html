@@ -1,0 +1,512 @@
+{% extends 'base.html' %}
+
+{% block title %}Class Fee Register - {{ selected_class }} ({{ target_month }} {{ target_year }}){% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="row align-items-center mb-4 no-print">
+    <div class="col-lg-6 col-md-7">
+        <h1 class="page-title mb-1">
+            <i class="fa-solid fa-table-list text-primary me-2"></i>Class Fee Register
+        </h1>
+        <p class="text-secondary small mb-0">
+            Excel-style class matrix for <strong class="text-white">{{ target_month }} {{ target_year }}</strong> &bull; Class: <strong class="text-info">{{ selected_class }}</strong>
+        </p>
+    </div>
+    <div class="col-lg-6 col-md-5 text-md-end mt-3 mt-md-0 d-flex gap-2 justify-content-md-end flex-wrap">
+        <a href="{{ url_for('export_class_fee_sheet', class=selected_class, month=target_month, year=target_year) }}" class="btn btn-success btn-sm">
+            <i class="fa-solid fa-file-excel me-1"></i> Export Excel
+        </a>
+        <button onclick="window.print();" class="btn btn-secondary btn-sm">
+            <i class="fa-solid fa-print me-1"></i> Print Sheet
+        </button>
+        <a href="{{ url_for('fee_entry') }}" class="btn btn-outline-secondary btn-sm" title="Single Student Search Entry">
+            <i class="fa-solid fa-magnifying-glass me-1"></i> Single Search
+        </a>
+    </div>
+</div>
+
+<!-- Class Selection Tabs & Month/Year Filter -->
+<div class="glass-panel mb-4 no-print">
+    <form action="{{ url_for('class_fee_sheet') }}" method="GET" id="classFilterForm">
+        <!-- Month & Year Controls Bar -->
+        <div class="row g-3 align-items-center mb-3">
+            <div class="col-auto">
+                <span class="text-secondary small font-weight-bold text-uppercase"><i class="fa-solid fa-calendar-days text-info me-1"></i> Billing Period:</span>
+            </div>
+            <div class="col-auto">
+                <select class="form-select form-select-sm" name="month" id="filter_month" onchange="this.form.submit()">
+                    {% for m in months %}
+                    <option value="{{ m }}" {% if m == target_month %}selected{% endif %}>{{ m }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-auto">
+                <select class="form-select form-select-sm" name="year" id="filter_year" onchange="this.form.submit()">
+                    {% for y in years %}
+                    <option value="{{ y }}" {% if y == target_year %}selected{% endif %}>{{ y }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <input type="hidden" name="class" id="selected_class_input" value="{{ selected_class }}">
+            
+            <div class="col text-end">
+                <span class="badge bg-primary bg-opacity-25 text-info border border-info px-3 py-1.5">
+                    <i class="fa-solid fa-users me-1"></i> Strength: {{ total_students }} Students
+                </span>
+            </div>
+        </div>
+
+        <hr class="my-2 border-secondary opacity-25">
+
+        <!-- Class Navigation Pills -->
+        <div class="d-flex align-items-center gap-2 flex-wrap pt-2">
+            <span class="text-secondary small font-weight-bold me-2"><i class="fa-solid fa-school text-warning me-1"></i> SELECT CLASS:</span>
+            {% for c in classes %}
+            <button type="button" 
+                    onclick="selectClass('{{ c }}')" 
+                    class="btn btn-sm {% if c == selected_class %}btn-primary shadow-sm font-weight-bold{% else %}btn-secondary{% endif %} rounded-pill px-3 py-1">
+                Class {{ c }}
+                <span class="badge bg-dark bg-opacity-50 ms-1" style="font-size: 0.68rem;">{{ class_counts.get(c, 0) }}</span>
+            </button>
+            {% endfor %}
+        </div>
+    </form>
+</div>
+
+<!-- Financial Summary Strip for Selected Class -->
+<div class="dashboard-grid-v2 mb-4">
+    <!-- Total Students -->
+    <div class="analytics-card card-theme-blue">
+        <div>
+            <div class="card-num">{{ total_students }}</div>
+            <div class="card-label">Class Strength</div>
+        </div>
+        <div class="card-footer-info">
+            <span>Enrolled Students</span>
+            <i class="fa-solid fa-user-graduate"></i>
+        </div>
+    </div>
+
+    <!-- Monthly Tuition Total -->
+    <div class="analytics-card card-theme-dark">
+        <div>
+            <div class="card-num">Rs. {{ "{:,.0f}".format(total_class_monthly_fee) }}</div>
+            <div class="card-label">Monthly Fee Total</div>
+        </div>
+        <div class="card-footer-info">
+            <span>Base Rate / Mo</span>
+            <i class="fa-solid fa-calendar-check"></i>
+        </div>
+    </div>
+
+    <!-- Total Arrears -->
+    <div class="analytics-card card-theme-yellow">
+        <div>
+            <div class="card-num">Rs. {{ "{:,.0f}".format(total_class_arrears) }}</div>
+            <div class="card-label">Previous Arrears</div>
+        </div>
+        <div class="card-footer-info">
+            <span>Carried Forward</span>
+            <i class="fa-solid fa-clock-rotate-left"></i>
+        </div>
+    </div>
+
+    <!-- Total Payable -->
+    <div class="analytics-card card-theme-purple">
+        <div>
+            <div class="card-num">Rs. {{ "{:,.0f}".format(total_class_payable) }}</div>
+            <div class="card-label">Total Net Dues</div>
+        </div>
+        <div class="card-footer-info">
+            <span>Fee + Arrears</span>
+            <i class="fa-solid fa-file-invoice-dollar"></i>
+        </div>
+    </div>
+
+    <!-- Total Collected -->
+    <div class="analytics-card card-theme-green">
+        <div>
+            <div class="card-num">Rs. {{ "{:,.0f}".format(total_class_paid) }}</div>
+            <div class="card-label">Collected Amount</div>
+        </div>
+        <div class="card-footer-info">
+            <span>{{ paid_count }} Paid &bull; {{ partial_count }} Partial</span>
+            <i class="fa-solid fa-circle-check"></i>
+        </div>
+    </div>
+
+    <!-- Total Remaining / Defaulters -->
+    <div class="analytics-card card-theme-red">
+        <div>
+            <div class="card-num">Rs. {{ "{:,.0f}".format(total_class_remaining) }}</div>
+            <div class="card-label">Remaining Recovery</div>
+        </div>
+        <div class="card-footer-info">
+            <span>{{ unpaid_count + partial_count }} Pending Recovery</span>
+            <i class="fa-solid fa-triangle-exclamation"></i>
+        </div>
+    </div>
+</div>
+
+<!-- Excel Sheet Table Container -->
+<div class="glass-panel">
+    <!-- Live Table Filter Bar -->
+    <div class="row align-items-center mb-3 no-print">
+        <div class="col-md-5">
+            <div class="search-wrapper">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                <input type="text" id="sheetSearchInput" class="form-control" placeholder="Quick filter by student name, father name, roll # or barcode (STD-105)..." onkeyup="filterSheetTable()">
+            </div>
+        </div>
+        <div class="col-md-7 text-md-end mt-2 mt-md-0 d-flex gap-2 justify-content-md-end align-items-center">
+            <span class="text-secondary small me-1">Status Filter:</span>
+            <button type="button" class="btn btn-sm btn-outline-secondary py-1 px-2.5 rounded-pill small active status-btn" onclick="filterStatus('all', this)">All ({{ total_students }})</button>
+            <button type="button" class="btn btn-sm btn-outline-success py-1 px-2.5 rounded-pill small status-btn" onclick="filterStatus('Paid', this)">Paid ({{ paid_count }})</button>
+            <button type="button" class="btn btn-sm btn-outline-warning py-1 px-2.5 rounded-pill small status-btn" onclick="filterStatus('Partial', this)">Partial ({{ partial_count }})</button>
+            <button type="button" class="btn btn-sm btn-outline-danger py-1 px-2.5 rounded-pill small status-btn" onclick="filterStatus('Unpaid', this)">Unpaid ({{ unpaid_count }})</button>
+        </div>
+    </div>
+
+    <!-- Print Title Header -->
+    <div class="print-only mb-3 text-center">
+        <h2>Alliedian School - Class Fee Register</h2>
+        <h4>Class: {{ selected_class }} &bull; Period: {{ target_month }} {{ target_year }}</h4>
+        <p>Generated on: {{ current_date }}</p>
+    </div>
+
+    <!-- Main Excel Sheet Table -->
+    <div class="table-responsive" style="max-height: 70vh; overflow-y: auto;">
+        <table class="table table-custom table-hover" id="feeSheetTable">
+            <thead style="position: sticky; top: 0; z-index: 10; background: #0b0f1d;">
+                <tr>
+                    <th style="width: 105px;" class="text-center">Roll / Barcode</th>
+                    <th>Student Name</th>
+                    <th>Father Name</th>
+                    <th>Phone / WhatsApp</th>
+                    <th class="text-end">Monthly Fee</th>
+                    <th class="text-end">Arrears</th>
+                    <th class="text-end text-info font-weight-bold">Total Payable</th>
+                    <th class="text-end text-success">Paid Amount</th>
+                    <th class="text-end text-danger">Balance Due</th>
+                    <th class="text-center" style="width: 100px;">Status</th>
+                    <th class="text-center no-print" style="width: 140px;">Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if sheet_data %}
+                    {% for row in sheet_data %}
+                    <tr class="align-middle sheet-row" 
+                        data-status="{{ row.status }}" 
+                        data-name="{{ row.name|lower }}" 
+                        data-father="{{ row.father_name|lower }}" 
+                        data-id="{{ row.id }}"
+                        data-barcode="std-{{ row.id }}">
+                        
+                        <!-- Student ID / Barcode Badge -->
+                        <td class="text-center font-monospace">
+                            <span class="badge bg-dark border border-secondary text-info" style="font-size: 0.72rem;">
+                                <i class="fa-solid fa-barcode me-1"></i>STD-{{ row.id }}
+                            </span>
+                        </td>
+                        
+                        <!-- Student Name -->
+                        <td>
+                            <span class="text-white fw-bold d-block">{{ row.name }}</span>
+                            {% if session.role == 'admin' and not active_campus_id and row.campus_name %}
+                            <span class="text-muted" style="font-size: 0.7rem;">{{ row.campus_name }}</span>
+                            {% endif %}
+                        </td>
+                        
+                        <!-- Father Name -->
+                        <td class="text-secondary">{{ row.father_name }}</td>
+                        
+                        <!-- Contact Phone -->
+                        <td>
+                            {% if row.phone_number %}
+                            <a href="https://wa.me/{{ row.phone_number|replace(' ', '')|replace('-', '') }}" target="_blank" class="text-info text-decoration-none small d-inline-flex align-items-center gap-1 font-monospace" title="WhatsApp Message">
+                                <i class="fa-brands fa-whatsapp text-success"></i>{{ row.phone_number }}
+                            </a>
+                            {% else %}
+                            <span class="text-muted">&mdash;</span>
+                            {% endif %}
+                        </td>
+                        
+                        <!-- Monthly Fee -->
+                        <td class="text-end font-monospace text-secondary">
+                            Rs. {{ "{:,.0f}".format(row.monthly_fee) }}
+                        </td>
+                        
+                        <!-- Previous Arrears -->
+                        <td class="text-end font-monospace {% if row.arrears > 0 %}text-warning fw-bold{% else %}text-muted{% endif %}">
+                            Rs. {{ "{:,.0f}".format(row.arrears) }}
+                        </td>
+                        
+                        <!-- Total Payable -->
+                        <td class="text-end font-monospace fw-bold text-white bg-dark bg-opacity-25">
+                            Rs. {{ "{:,.0f}".format(row.total_payable) }}
+                        </td>
+                        
+                        <!-- Paid Amount -->
+                        <td class="text-end font-monospace {% if row.paid > 0 %}text-success fw-bold{% else %}text-muted{% endif %}">
+                            Rs. {{ "{:,.0f}".format(row.paid) }}
+                        </td>
+                        
+                        <!-- Balance Due -->
+                        <td class="text-end font-monospace {% if row.remaining > 0 %}text-danger fw-bold{% else %}text-muted{% endif %}">
+                            Rs. {{ "{:,.0f}".format(row.remaining) }}
+                        </td>
+                        
+                        <!-- Status Badge -->
+                        <td class="text-center">
+                            {% if row.status == 'Paid' %}
+                            <span class="badge bg-success bg-opacity-25 text-success border border-success px-2 py-1">
+                                <i class="fa-solid fa-circle-check me-1"></i>PAID
+                            </span>
+                            {% elif row.status == 'Partial' %}
+                            <span class="badge bg-warning bg-opacity-25 text-warning border border-warning px-2 py-1">
+                                <i class="fa-solid fa-clock me-1"></i>PARTIAL
+                            </span>
+                            {% else %}
+                            <span class="badge bg-danger bg-opacity-25 text-danger border border-danger px-2 py-1">
+                                <i class="fa-solid fa-circle-xmark me-1"></i>UNPAID
+                            </span>
+                            {% endif %}
+                        </td>
+                        
+                        <!-- Quick Collect & Ledger Actions -->
+                        <td class="text-center no-print">
+                            <div class="d-flex justify-content-center gap-1">
+                                <button type="button" 
+                                        class="btn btn-sm {% if row.remaining <= 0 %}btn-outline-success{% else %}btn-primary{% endif %} px-2 py-1 d-inline-flex align-items-center gap-1"
+                                        onclick="openQuickCollectModal({{ row.id }}, '{{ row.name|replace("'", "\\'") }}', '{{ row.father_name|replace("'", "\\'") }}', '{{ row.class }}', {{ row.total_payable }}, {{ row.paid }}, {{ row.remaining }}, {{ row.monthly_fee }})"
+                                        title="{% if row.remaining <= 0 %}Update Payment{% else %}Collect Fee Record{% endif %}">
+                                    <i class="fa-solid fa-receipt"></i>
+                                    <span>{% if row.remaining <= 0 %}Edit{% else %}Collect{% endif %}</span>
+                                </button>
+                                
+                                <a href="{{ url_for('fee_history', student_id=row.id) }}" class="btn btn-sm btn-secondary px-2 py-1" title="View Student Fee Ledger">
+                                    <i class="fa-solid fa-book-open"></i>
+                                </a>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="11" class="text-center py-5 text-secondary">
+                            <i class="fa-solid fa-folder-open mb-2" style="font-size: 2.5rem; opacity: 0.4;"></i>
+                            <p class="mb-0">No active students found in <strong>Class {{ selected_class }}</strong>.</p>
+                        </td>
+                    </tr>
+                {% endif %}
+            </tbody>
+            <!-- Table Footer Total Summary -->
+            <tfoot style="position: sticky; bottom: 0; z-index: 10; background: #0f1424; font-weight: 750; border-top: 2px solid rgba(255, 255, 255, 0.15);">
+                <tr>
+                    <td colspan="4" class="text-uppercase text-secondary ps-3">Class Total ({{ total_students }} Students)</td>
+                    <td class="text-end font-monospace text-secondary">Rs. {{ "{:,.0f}".format(total_class_monthly_fee) }}</td>
+                    <td class="text-end font-monospace text-warning">Rs. {{ "{:,.0f}".format(total_class_arrears) }}</td>
+                    <td class="text-end font-monospace text-white bg-dark bg-opacity-50">Rs. {{ "{:,.0f}".format(total_class_payable) }}</td>
+                    <td class="text-end font-monospace text-success">Rs. {{ "{:,.0f}".format(total_class_paid) }}</td>
+                    <td class="text-end font-monospace text-danger">Rs. {{ "{:,.0f}".format(total_class_remaining) }}</td>
+                    <td colspan="2" class="text-center text-muted small">{{ paid_count }} Paid &bull; {{ unpaid_count + partial_count }} Due</td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+</div>
+
+<!-- Quick Fee Collection Modal -->
+<div class="modal fade" id="quickCollectModal" tabindex="-1" aria-labelledby="quickCollectModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content modal-custom">
+            <div class="modal-header border-bottom border-secondary border-opacity-25 pb-3">
+                <h5 class="modal-title text-white d-flex align-items-center gap-2" id="quickCollectModalLabel">
+                    <i class="fa-solid fa-receipt text-success"></i> Instant Fee Collection
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="{{ url_for('fee_quick_collect') }}" method="POST" id="quickCollectForm">
+                <div class="modal-body py-3">
+                    <input type="hidden" name="student_id" id="modal_student_id">
+                    <input type="hidden" name="return_class" value="{{ selected_class }}">
+                    
+                    <!-- Student Info Card Header -->
+                    <div class="p-3 mb-3 rounded" style="background: rgba(255, 255, 255, 0.04); border: 1px solid var(--glass-border);">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <h6 class="mb-1 text-white font-weight-bold" id="modal_student_name">Student Name</h6>
+                                <span class="text-secondary small d-block" id="modal_father_name">Father: -</span>
+                            </div>
+                            <span class="badge bg-primary bg-opacity-25 text-info border border-info font-monospace" id="modal_class_badge">Class</span>
+                        </div>
+                    </div>
+
+                    <!-- Billing Period Confirmation -->
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label class="form-label">Billing Month</label>
+                            <select class="form-select form-select-sm" name="month" id="modal_month">
+                                {% for m in months %}
+                                <option value="{{ m }}" {% if m == target_month %}selected{% endif %}>{{ m }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Billing Year</label>
+                            <select class="form-select form-select-sm" name="year" id="modal_year">
+                                {% for y in years %}
+                                <option value="{{ y }}" {% if y == target_year %}selected{% endif %}>{{ y }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Dues & Paid Amount Row -->
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <label for="modal_paid_amount" class="form-label mb-0">Paid Amount (Rs.) <span class="text-danger">*</span></label>
+                            <span class="text-secondary small">Total Payable: <strong class="text-white" id="modal_total_payable">Rs. 0</strong></span>
+                        </div>
+                        <div class="input-group">
+                            <span class="input-group-text bg-transparent border-secondary text-secondary">Rs.</span>
+                            <input type="number" step="any" min="0" class="form-control font-monospace fw-bold fs-5 text-success" id="modal_paid_amount" name="paid_amount" required>
+                            <button type="button" class="btn btn-outline-info btn-sm" onclick="setFullPayableAmount()" title="Fill Total Payable Amount">
+                                Full Paid
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Payment Mode -->
+                    <div class="mb-3">
+                        <label class="form-label">Payment Mode</label>
+                        <div class="d-flex gap-2">
+                            <input type="radio" class="btn-check" name="payment_mode" id="q_mode_voucher" value="Voucher" checked>
+                            <label class="btn btn-outline-secondary btn-sm flex-fill text-center" for="q_mode_voucher">
+                                <i class="fa-solid fa-receipt me-1 text-success"></i> Voucher / Cash
+                            </label>
+
+                            <input type="radio" class="btn-check" name="payment_mode" id="q_mode_bank" value="Bank">
+                            <label class="btn btn-outline-secondary btn-sm flex-fill text-center" for="q_mode_bank">
+                                <i class="fa-solid fa-building-columns me-1 text-info"></i> Bank
+                            </label>
+
+                            <input type="radio" class="btn-check" name="payment_mode" id="q_mode_online" value="Online">
+                            <label class="btn btn-outline-secondary btn-sm flex-fill text-center" for="q_mode_online">
+                                <i class="fa-solid fa-mobile-screen me-1 text-warning"></i> Online
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Date & Slip Ref -->
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label for="modal_date_paid" class="form-label">Payment Date</label>
+                            <input type="date" class="form-control form-control-sm" id="modal_date_paid" name="date_paid" value="{{ current_date }}">
+                        </div>
+                        <div class="col-6">
+                            <label for="modal_reference_no" class="form-label">Slip / Ref # (Optional)</label>
+                            <input type="text" class="form-control form-control-sm" id="modal_reference_no" name="reference_no" placeholder="e.g. MCB-9812">
+                        </div>
+                    </div>
+
+                    <!-- Notes -->
+                    <div class="mb-2">
+                        <label for="modal_notes" class="form-label">Remarks (Optional)</label>
+                        <input type="text" class="form-control form-control-sm" id="modal_notes" name="notes" placeholder="e.g. Paid at campus counter">
+                    </div>
+                </div>
+                <div class="modal-footer border-top border-secondary border-opacity-25 pt-2">
+                    <button type="button" class="btn btn-secondary btn-sm px-3" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success btn-sm px-4 fw-bold">
+                        <i class="fa-solid fa-check me-1"></i> Save Fee Transaction
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Interactive Client-side Scripting -->
+<script>
+let currentModalPayable = 0;
+let quickCollectModalObj = null;
+
+document.addEventListener('DOMContentLoaded', function() {
+    quickCollectModalObj = new bootstrap.Modal(document.getElementById('quickCollectModal'));
+});
+
+function selectClass(className) {
+    document.getElementById('selected_class_input').value = className;
+    document.getElementById('classFilterForm').submit();
+}
+
+function openQuickCollectModal(id, name, father, className, payable, paid, remaining, monthly) {
+    document.getElementById('modal_student_id').value = id;
+    document.getElementById('modal_student_name').textContent = name + ' (ID: ' + id + ')';
+    document.getElementById('modal_father_name').textContent = 'Father: ' + (father || 'N/A');
+    document.getElementById('modal_class_badge').textContent = 'Class: ' + className;
+    
+    currentModalPayable = payable;
+    document.getElementById('modal_total_payable').textContent = 'Rs. ' + payable.toLocaleString();
+    
+    // Default the paid amount input to remaining balance if > 0, else total payable
+    let amountToFill = (remaining > 0) ? (paid > 0 ? (paid + remaining) : remaining) : (paid > 0 ? paid : payable);
+    document.getElementById('modal_paid_amount').value = amountToFill;
+    
+    if (quickCollectModalObj) {
+        quickCollectModalObj.show();
+        setTimeout(() => {
+            const input = document.getElementById('modal_paid_amount');
+            input.focus();
+            input.select();
+        }, 400);
+    }
+}
+
+function setFullPayableAmount() {
+    document.getElementById('modal_paid_amount').value = currentModalPayable;
+}
+
+// Live client-side instant filtering across the table (Supports Name, Father, ID & Barcode)
+function filterSheetTable() {
+    const input = document.getElementById('sheetSearchInput').value.toLowerCase().trim();
+    const cleanDigits = input.replace(/^[a-z]+[-_]?/i, '');
+    const rows = document.querySelectorAll('.sheet-row');
+    
+    rows.forEach(row => {
+        const name = row.getAttribute('data-name') || '';
+        const father = row.getAttribute('data-father') || '';
+        const id = row.getAttribute('data-id') || '';
+        const barcode = row.getAttribute('data-barcode') || '';
+        const status = row.getAttribute('data-status') || '';
+        
+        const activeStatusBtn = document.querySelector('.status-btn.active');
+        const activeStatus = activeStatusBtn ? activeStatusBtn.textContent.split(' ')[0].trim() : 'All';
+        
+        const matchesSearch = !input || 
+            name.includes(input) || 
+            father.includes(input) || 
+            id === input || 
+            id === cleanDigits ||
+            id.includes(input) ||
+            barcode.includes(input);
+            
+        const matchesStatus = activeStatus === 'All' || status === activeStatus;
+        
+        if (matchesSearch && matchesStatus) {
+            row.style.display = '';
+        } else {
+            row.style.display = 'none';
+        }
+    });
+}
+
+function filterStatus(statusType, btnElement) {
+    document.querySelectorAll('.status-btn').forEach(btn => btn.classList.remove('active'));
+    btnElement.classList.add('active');
+    filterSheetTable();
+}
+</script>
+{% endblock %}

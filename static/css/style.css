@@ -744,7 +744,7 @@ h6 { font-size: 0.78rem; font-weight: 600; }
     display: flex;
     align-items: center;
     gap: 10px;
-    margin-bottom: 14px;
+    margin-bottom: 0;
 }
 
 .logo-icon {
@@ -764,14 +764,102 @@ h6 { font-size: 0.78rem; font-weight: 600; }
     -webkit-text-fill-color: transparent;
 }
 
+/* App Topbar Styling */
+.app-topbar {
+    height: 62px;
+    background: rgba(8, 11, 21, 0.88);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--glass-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+    position: sticky;
+    top: 0;
+    z-index: 900;
+    gap: 16px;
+}
+
+.topbar-search {
+    flex: 1;
+    max-width: 360px;
+}
+
+.topbar-search .search-form-global {
+    width: 100%;
+}
+
+.topbar-search .search-icon {
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 10;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    pointer-events: none;
+}
+
+.topbar-search-input {
+    width: 100%;
+    padding: 8px 14px 8px 38px;
+    background: rgba(255, 255, 255, 0.035);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--border-radius-sm);
+    color: #ffffff;
+    font-size: 0.835rem;
+    outline: none;
+    transition: var(--transition);
+}
+
+.topbar-search-input:focus {
+    background: rgba(255, 255, 255, 0.07);
+    border-color: var(--accent-cyan);
+    box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.15);
+}
+
+.topbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.topbar-campus-wrapper .btn-campus-select {
+    background: rgba(255, 255, 255, 0.035);
+    border: 1px solid var(--glass-border);
+    color: #ffffff;
+    padding: 6px 14px;
+    font-size: 0.825rem;
+    border-radius: var(--border-radius-sm);
+    font-weight: 500;
+    transition: var(--transition);
+}
+
+.topbar-campus-wrapper .btn-campus-select:hover,
+.topbar-campus-wrapper .btn-campus-select:focus {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(56, 189, 248, 0.3);
+    color: #ffffff;
+}
+
+.topbar-campus-wrapper .operator-campus-badge {
+    background: rgba(255, 255, 255, 0.035);
+    border: 1px solid var(--glass-border);
+    color: #ffffff;
+    padding: 6px 14px;
+    font-size: 0.825rem;
+    border-radius: var(--border-radius-sm);
+}
+
 .user-profile-summary {
     display: flex;
     align-items: center;
     gap: 10px;
-    background: rgba(255, 255, 255, 0.03);
-    padding: 8px 10px;
+    background: rgba(255, 255, 255, 0.035);
+    padding: 5px 12px 5px 6px;
     border-radius: var(--border-radius-sm);
-    border: 1px solid rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--glass-border);
 }
 
 .avatar-circle {

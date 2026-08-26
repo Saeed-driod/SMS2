@@ -28,48 +28,6 @@
                     <i class="fa-solid fa-graduation-cap logo-icon"></i>
                     <div class="logo-text">ALLIEDIAN</div>
                 </div>
-                
-                <!-- Search moved from Topbar -->
-                <div class="sidebar-search mb-3 px-3 mt-2">
-                    <form action="{{ url_for('students_view') }}" method="GET" class="search-form-global position-relative" style="width: 100%; height: auto;">
-                        <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 14px; top: 50%; transform: translateY(-50%); z-index: 10; color: var(--text-muted); font-size: 0.85rem;"></i>
-                        <input type="text" name="search" placeholder="Search Student..." value="{{ request.args.get('search', '') }}" style="width: 100%; padding: 8px 10px 8px 36px; background: rgba(255, 255, 255, 0.03); border: 1px solid var(--glass-border); border-radius: var(--border-radius-sm); color: #fff; font-size: 0.825rem; outline: none;">
-                        <button type="submit" style="display: none;"></button>
-                    </form>
-                </div>
-
-                <!-- User Profile summary -->
-                <div class="user-profile-summary mx-3 mb-3">
-                    <div class="avatar-circle">
-                        <i class="fa-solid fa-user-tie"></i>
-                    </div>
-                    <div class="user-details">
-                        <span class="user-name">{{ session.username }}</span>
-                        <span class="user-role badge rounded-pill"><span class="pulse-indicator"></span>{{ session.role|upper }}</span>
-                    </div>
-                </div>
-                
-                <!-- Campus Selector moved from Topbar -->
-                <div class="sidebar-campus-wrapper px-3 mb-2">
-                    {% if session.role == 'admin' %}
-                    <div class="dropdown campus-dropdown-wrapper w-100">
-                        <button class="btn btn-campus-select dropdown-toggle w-100 text-start d-flex justify-content-between align-items-center" type="button" id="campusDropdown" data-bs-toggle="dropdown" aria-expanded="false" style="background: rgba(255, 255, 255, 0.04); border: 1px solid var(--glass-border); color: #fff; padding: 8px 12px; font-size: 0.825rem; border-radius: var(--border-radius-sm);">
-                            <span class="text-truncate"><i class="fa-solid fa-school me-2 text-info"></i>{{ active_campus_name }}</span>
-                        </button>
-                        <ul class="dropdown-menu dropdown-menu-dark shadow border-0 w-100" aria-labelledby="campusDropdown">
-                            <li><a class="dropdown-item {% if not active_campus_id %}active{% endif %}" href="{{ url_for('switch_campus', campus_id=0) }}">All Campuses (Consolidated)</a></li>
-                            <li><hr class="dropdown-divider bg-secondary opacity-25"></li>
-                            {% for c in campuses_list %}
-                                <li><a class="dropdown-item {% if active_campus_id == c.id %}active{% endif %}" href="{{ url_for('switch_campus', campus_id=c.id) }}">{{ c.name }}</a></li>
-                            {% endfor %}
-                        </ul>
-                    </div>
-                    {% else %}
-                    <div class="operator-campus-badge w-100 text-center" style="background: rgba(255, 255, 255, 0.04); border: 1px solid var(--glass-border); color: #fff; padding: 8px; font-size: 0.825rem; border-radius: var(--border-radius-sm);">
-                        <i class="fa-solid fa-school me-2 text-info"></i>{{ active_campus_name }}
-                    </div>
-                    {% endif %}
-                </div>
             </div>
             <nav class="sidebar-nav">
                 <div class="nav-section-title">Main Navigation</div>
@@ -97,6 +55,11 @@
                     <li class="nav-item">
                         <a href="{{ url_for('students_promotion') }}" class="nav-link {% if '/promotion' in request.path %}active{% endif %}">
                             <i class="fa-solid fa-graduation-cap"></i><span>Class Promotion</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="{{ url_for('class_fee_sheet') }}" class="nav-link {% if '/fee/class-sheet' in request.path %}active{% endif %}">
+                            <i class="fa-solid fa-table-list"></i><span>Class Fee Register</span>
                         </a>
                     </li>
                     <li class="nav-item">
@@ -148,6 +111,54 @@
         
         <!-- Main Content Area -->
         <div class="app-main-content">
+            <!-- App Topbar: Horizontal Search, Campus Selector, User Profile -->
+            <header class="app-topbar no-print">
+                <div class="topbar-search">
+                    <form action="{{ url_for('students_view') }}" method="GET" class="search-form-global position-relative">
+                        <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                        <input type="text" name="search" placeholder="Search Student..." value="{{ request.args.get('search', '') }}" class="topbar-search-input">
+                        <button type="submit" style="display: none;"></button>
+                    </form>
+                </div>
+                
+                <div class="topbar-actions">
+                    <!-- Campus Selector -->
+                    <div class="topbar-campus-wrapper">
+                        {% if session.role == 'admin' %}
+                        <div class="dropdown campus-dropdown-wrapper">
+                            <button class="btn btn-campus-select dropdown-toggle d-flex align-items-center gap-2" type="button" id="campusDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                                <i class="fa-solid fa-school text-info"></i>
+                                <span class="text-truncate campus-name-display">{{ active_campus_name }}</span>
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end shadow border-0" aria-labelledby="campusDropdown">
+                                <li><a class="dropdown-item {% if not active_campus_id %}active{% endif %}" href="{{ url_for('switch_campus', campus_id=0) }}">All Campuses (Consolidated)</a></li>
+                                <li><hr class="dropdown-divider bg-secondary opacity-25"></li>
+                                {% for c in campuses_list %}
+                                    <li><a class="dropdown-item {% if active_campus_id == c.id %}active{% endif %}" href="{{ url_for('switch_campus', campus_id=c.id) }}">{{ c.name }}</a></li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        {% else %}
+                        <div class="operator-campus-badge d-flex align-items-center gap-2">
+                            <i class="fa-solid fa-school text-info"></i>
+                            <span>{{ active_campus_name }}</span>
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <!-- User Profile summary -->
+                    <div class="user-profile-summary">
+                        <div class="avatar-circle">
+                            <i class="fa-solid fa-user-tie"></i>
+                        </div>
+                        <div class="user-details">
+                            <span class="user-name">{{ session.username }}</span>
+                            <span class="user-role badge rounded-pill"><span class="pulse-indicator"></span>{{ session.role|upper }}</span>
+                        </div>
+                    </div>
+                </div>
+            </header>
+
             <!-- Page Content Wrapper -->
             <main class="page-content p-4">
                 <!-- Flash Messages -->

@@ -107,11 +107,12 @@
             font-size: 12px;
         }
         .v-bank-section {
-            border-top: 1px solid #000;
-            margin-top: 6px;
-            padding-top: 5px;
-            font-size: 10px;
-            line-height: 1.4;
+            border: 1px solid #000;
+            margin: 4px 0 6px 0;
+            padding: 4px 6px;
+            font-size: 9.5px;
+            line-height: 1.3;
+            background-color: #fafafa;
         }
         .v-bank-section p {
             margin: 0;
@@ -119,22 +120,32 @@
         }
         .v-bank-title {
             font-weight: bold;
-            font-size: 11px;
+            font-size: 10px;
             margin-bottom: 2px !important;
+            text-transform: uppercase;
+            letter-spacing: 0.02em;
+        }
+        .v-bank-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1px 6px;
+            font-size: 9px;
+            font-family: 'Times New Roman', Times, serif;
         }
         .v-bank-row {
             display: flex;
             align-items: center;
-            gap: 4px;
-            margin-bottom: 1px !important;
+            gap: 3px;
+            margin-bottom: 0 !important;
         }
         .v-bank-logo {
             font-weight: bold;
-            font-size: 10px;
-            min-width: 55px;
+            font-size: 9px;
+            min-width: 48px;
         }
         .v-bank-acc {
-            font-size: 9.5px;
+            font-size: 9px;
+            font-family: monospace;
         }
         .v-table {
             width: 100%;
@@ -202,10 +213,50 @@
                     <p class="v-sub-text">Fee for: {{ data.month }} {{ data.year }} - {{ data.month }} {{ data.year }}</p>
                     <p class="v-copy-name">{{ copy_name }}</p>
                     
+                    <!-- Bank & Online Accounts Section (At Top) -->
+                    <div class="v-bank-section">
+                        <p class="v-bank-title">Bank &amp; Online Accounts:</p>
+                        <div class="v-bank-grid">
+                            <div class="v-bank-row">
+                                <span class="v-bank-logo">HBL:</span>
+                                <span class="v-bank-acc">0018307900667103</span>
+                            </div>
+                            <div class="v-bank-row">
+                                <span class="v-bank-logo">EasyPaisa:</span>
+                                <span class="v-bank-acc">0333-4537875</span>
+                            </div>
+                            <div class="v-bank-row">
+                                <span class="v-bank-logo">BOP:</span>
+                                <span class="v-bank-acc">6020168366800013</span>
+                            </div>
+                            <div class="v-bank-row">
+                                <span class="v-bank-logo">JazzCash:</span>
+                                <span class="v-bank-acc">0333-4537875</span>
+                            </div>
+                            <div class="v-bank-row" style="grid-column: span 2;">
+                                <span class="v-bank-logo">Bank Alfalah:</span>
+                                <span class="v-bank-acc">0434001006662966</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Student Barcode (CODE128) -->
+                    <div class="v-barcode-wrapper" style="text-align: center; margin: 2px 0 6px 0;">
+                        <svg class="barcode-render"
+                             jsbarcode-format="CODE128"
+                             jsbarcode-value="STD-{{ data.student.id }}"
+                             jsbarcode-text="STD-{{ '%04d'|format(data.student.id) }}"
+                             jsbarcode-width="1.25"
+                             jsbarcode-height="25"
+                             jsbarcode-fontsize="9.5"
+                             jsbarcode-margin="0"
+                             style="max-width: 100%; height: auto;"></svg>
+                    </div>
+
                     <table class="v-table" style="margin-bottom: 10px;">
                         <tr>
-                            <td style="width: 55%;">Sr. No.:</td>
-                            <td>AS-{{ data.year % 100 }}{{ "%02d"|format(data.student.id) }}</td>
+                            <td style="width: 52%;">Sr. No. / Barcode:</td>
+                            <td><strong style="font-family: monospace;">STD-{{ "%04d"|format(data.student.id) }}</strong></td>
                         </tr>
                         <tr>
                             <td>Name:</td>
@@ -262,31 +313,27 @@
                     <div class="v-note-section">
                         <p style="font-weight: bold; font-family: 'Times New Roman', Times, serif;">Note:-</p>
                         <p>-&gt;The fee be deposited in the</p>
-                        <p style="margin-left: 15px;">Designated Bank.</p>
+                        <p style="margin-left: 15px;">Designated Bank / Online Accounts.</p>
                         <p>-&gt;The challan must be deposited within due</p>
                         <p style="margin-left: 15px;">date to avoid late payment charges.</p>
                         <p class="v-note-bold">-&gt; New challan issuance charges Rs:10/.</p>
-                    </div>
-
-                    <div class="v-bank-section">
-                        <p class="v-bank-title">Bank Account Details:</p>
-                        <div class="v-bank-row">
-                            <span class="v-bank-logo">HBL</span>
-                            <span class="v-bank-acc">A/C No: 0018307900667103</span>
-                        </div>
-                        <div class="v-bank-row">
-                            <span class="v-bank-logo">BOP</span>
-                            <span class="v-bank-acc">A/C No: 6020168366800013</span>
-                        </div>
-                        <div class="v-bank-row">
-                            <span class="v-bank-logo">Bank Alfalah</span>
-                            <span class="v-bank-acc">0434001006662966</span>
-                        </div>
                     </div>
                 </div>
                 {% endfor %}
             </div>
         </div>
     </div>
+
+    <!-- JsBarcode CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            try {
+                JsBarcode(".barcode-render").init();
+            } catch(e) {
+                console.error("Barcode init error:", e);
+            }
+        });
+    </script>
 </body>
 </html>

@@ -27,7 +27,7 @@
         <div class="col-md-3">
             <div class="search-wrapper">
                 <i class="fa-solid fa-magnifying-glass"></i>
-                <input type="text" class="form-control" name="search" placeholder="Search by name, father..." value="{{ search }}">
+                <input type="text" class="form-control" name="search" placeholder="Search by name, father, roll # or barcode (STD-105)..." value="{{ search }}">
             </div>
         </div>
         <div class="col-md-2">
@@ -59,20 +59,20 @@
         {% else %}
         <div class="col-md-5 text-end">
         {% endif %}
-            <button type="submit" class="btn btn-secondary w-100">
-                <i class="fa-solid fa-sliders me-1"></i> Filter
+            <button type="submit" class="btn btn-primary w-100">
+                <i class="fa-solid fa-filter me-1"></i> Filter
             </button>
         </div>
     </form>
 </div>
 
-<!-- Students Grid/Table -->
+<!-- Students Table -->
 <div class="glass-panel">
     <div class="table-responsive">
         <table class="table table-custom">
             <thead>
                 <tr>
-                    <th style="width: 70px;">ID</th>
+                    <th style="width: 100px;">Roll / Barcode</th>
                     <th>Name</th>
                     <th>Father Name</th>
                     <th>Contact / Phone</th>
@@ -91,7 +91,11 @@
                     {% for student in students %}
                     {% set is_pending = (student.id in pending_delete_map) %}
                     <tr class="{% if is_pending %}table-row-pending{% elif student.status == 'withdrawn' %}opacity-75{% endif %}">
-                        <td class="text-secondary font-monospace">{{ student.id }}</td>
+                        <td class="text-secondary font-monospace">
+                            <span class="badge bg-dark border border-secondary text-info" style="font-size: 0.72rem;">
+                                <i class="fa-solid fa-barcode me-1"></i>STD-{{ student.id }}
+                            </span>
+                        </td>
                         <td>
                             <div class="d-flex align-items-center flex-wrap gap-1">
                                 <span class="fw-semibold text-white">{{ student.name }}</span>

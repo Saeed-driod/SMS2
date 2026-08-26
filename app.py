@@ -479,8 +479,13 @@ def export_students_excel():
         params.append(campus_filter)
         
     if search:
-        query += " AND (s.name LIKE ? OR s.father_name LIKE ? OR s.phone_number LIKE ?)"
-        params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
+        id_digits = re.sub(r'^[A-Za-z]+[-_]?', '', search)
+        if id_digits.isdigit():
+            query += " AND (s.name LIKE ? OR s.father_name LIKE ? OR s.phone_number LIKE ? OR s.id = ? OR CAST(s.id AS TEXT) LIKE ?)"
+            params.extend([f"%{search}%", f"%{search}%", f"%{search}%", int(id_digits), f"%{search}%"])
+        else:
+            query += " AND (s.name LIKE ? OR s.father_name LIKE ? OR s.phone_number LIKE ? OR CAST(s.id AS TEXT) LIKE ?)"
+            params.extend([f"%{search}%", f"%{search}%", f"%{search}%", f"%{search}%"])
         
     if class_filter:
         query += " AND s.class = ?"
@@ -667,8 +672,13 @@ def students_view():
         params.append(campus_filter)
         
     if search:
-        query += " AND (s.name LIKE ? OR s.father_name LIKE ? OR s.phone_number LIKE ?)"
-        params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
+        id_digits = re.sub(r'^[A-Za-z]+[-_]?', '', search)
+        if id_digits.isdigit():
+            query += " AND (s.name LIKE ? OR s.father_name LIKE ? OR s.phone_number LIKE ? OR s.id = ? OR CAST(s.id AS TEXT) LIKE ?)"
+            params.extend([f"%{search}%", f"%{search}%", f"%{search}%", int(id_digits), f"%{search}%"])
+        else:
+            query += " AND (s.name LIKE ? OR s.father_name LIKE ? OR s.phone_number LIKE ? OR CAST(s.id AS TEXT) LIKE ?)"
+            params.extend([f"%{search}%", f"%{search}%", f"%{search}%", f"%{search}%"])
         
     if class_filter:
         query += " AND s.class = ?"
@@ -1324,6 +1334,276 @@ def fee_entry():
                            years=[2025, 2026, 2027, 2028],
                            annual_info=annual_info,
                            current_date=datetime.now().strftime('%Y-%m-%d'))
+
+@app.route('/fee/class-sheet')
+@login_required
+def class_fee_sheet():
+    target_month = request.args.get('month', MONTH_NUM_TO_NAME[datetime.now().month])
+    target_year = request.args.get('year', datetime.now().year, type=int)
+    active_campus_id = get_active_campus_id()
+    conn = get_db_connection()
+    
+    # 1. Fetch available classes with student counts
+    db_classes_query = "SELECT DISTINCT class FROM students WHERE (status IS NULL OR status = 'active')"
+    db_classes_params = []
+    if active_campus_id:
+        db_classes_query += " AND campus_id = ?"
+        db_classes_params = [active_campus_id]
+    db_classes_query += " ORDER BY class"
+    db_classes_rows = conn.execute(db_classes_query, db_classes_params).fetchall()
+    existing_classes = [r['class'] for r in db_classes_rows if r['class']]
+    
+    classes = [c for c in STANDARD_CLASSES if c in existing_classes] + [c for c in existing_classes if c not in STANDARD_CLASSES]
+    if not classes:
+        classes = existing_classes or STANDARD_CLASSES
+        
+    count_query = "SELECT class, COUNT(*) as count FROM students WHERE (status IS NULL OR status = 'active')"
+    count_params = []
+    if active_campus_id:
+        count_query += " AND campus_id = ?"
+        count_params.append(active_campus_id)
+    count_query += " GROUP BY class"
+    class_counts = {r['class']: r['count'] for r in conn.execute(count_query, count_params).fetchall()}
+    
+    selected_class = request.args.get('class', '').strip()
+    if not selected_class and classes:
+        selected_class = classes[0]
+        
+    # 2. Fetch students for the selected class
+    sheet_data = []
+    total_class_monthly_fee = 0.0
+    total_class_arrears = 0.0
+    total_class_payable = 0.0
+    total_class_paid = 0.0
+    total_class_remaining = 0.0
+    paid_count = 0
+    partial_count = 0
+    unpaid_count = 0
+    
+    if selected_class:
+        s_query = """
+            SELECT s.*, c.name as campus_name 
+            FROM students s 
+            LEFT JOIN campuses c ON s.campus_id = c.id 
+            WHERE s.class = ? AND (s.status IS NULL OR s.status = 'active')
+        """
+        s_params = [selected_class]
+        if active_campus_id:
+            s_query += " AND s.campus_id = ?"
+            s_params.append(active_campus_id)
+        s_query += " ORDER BY s.id ASC"
+        students = conn.execute(s_query, s_params).fetchall()
+        
+        student_ids = [s['id'] for s in students]
+        fees_map = {sid: [] for sid in student_ids}
+        if student_ids:
+            placeholders = ','.join(['?'] * len(student_ids))
+            all_fees = conn.execute(
+                f"SELECT student_id, month, year, paid_amount, date_paid, payment_mode, reference_no, notes FROM fees WHERE student_id IN ({placeholders})",
+                student_ids
+            ).fetchall()
+            for f in all_fees:
+                fees_map[f['student_id']].append(f)
+                
+        for s in students:
+            details = get_student_fee_details(s, target_month, target_year, payments=fees_map.get(s['id'], []))
+            monthly_fee = details['monthly_fee']
+            arrears = details['arrears']
+            total_payable = details['total_payable']
+            paid = details['paid_this_month']
+            remaining = details['remaining_payable']
+            
+            if remaining <= 0 and (paid > 0 or total_payable == 0):
+                status = 'Paid'
+                status_badge = 'success'
+                paid_count += 1
+            elif paid > 0 and remaining > 0:
+                status = 'Partial'
+                status_badge = 'warning'
+                partial_count += 1
+            else:
+                status = 'Unpaid'
+                status_badge = 'danger'
+                unpaid_count += 1
+                
+            sheet_data.append({
+                'id': s['id'],
+                'name': s['name'],
+                'father_name': s['father_name'] or '',
+                'phone_number': s['phone_number'] or '',
+                'class': s['class'],
+                'campus_name': s['campus_name'],
+                'monthly_fee': monthly_fee,
+                'arrears': arrears,
+                'total_payable': total_payable,
+                'paid': paid,
+                'remaining': remaining,
+                'status': status,
+                'status_badge': status_badge
+            })
+            
+            total_class_monthly_fee += monthly_fee
+            total_class_arrears += arrears
+            total_class_payable += total_payable
+            total_class_paid += paid
+            total_class_remaining += remaining
+            
+    conn.close()
+    
+    months = list(MONTH_NUM_TO_NAME.values())
+    years = [2025, 2026, 2027, 2028]
+    
+    return render_template('class_fee_sheet.html',
+                           classes=classes,
+                           class_counts=class_counts,
+                           selected_class=selected_class,
+                           target_month=target_month,
+                           target_year=target_year,
+                           months=months,
+                           years=years,
+                           sheet_data=sheet_data,
+                           total_students=len(sheet_data),
+                           total_class_monthly_fee=total_class_monthly_fee,
+                           total_class_arrears=total_class_arrears,
+                           total_class_payable=total_class_payable,
+                           total_class_paid=total_class_paid,
+                           total_class_remaining=total_class_remaining,
+                           paid_count=paid_count,
+                           partial_count=partial_count,
+                           unpaid_count=unpaid_count,
+                           current_date=datetime.now().strftime('%Y-%m-%d'))
+
+@app.route('/fee/quick-collect', methods=['POST'])
+@login_required
+def fee_quick_collect():
+    active_campus_id = get_active_campus_id()
+    conn = get_db_connection()
+    
+    student_id = int(request.form['student_id'])
+    paid_amount = float(request.form['paid_amount'])
+    month = request.form['month']
+    year = int(request.form['year'])
+    selected_class = request.form.get('return_class', '')
+    date_paid = request.form.get('date_paid') or datetime.now().strftime('%Y-%m-%d')
+    payment_mode = request.form.get('payment_mode', 'Voucher').strip()
+    reference_no = request.form.get('reference_no', '').strip()
+    notes = request.form.get('notes', '').strip()
+    collected_by = session.get('username', 'operator')
+    
+    student = conn.execute("SELECT * FROM students WHERE id = ?", (student_id,)).fetchone()
+    if not student or (active_campus_id and student['campus_id'] != active_campus_id):
+        conn.close()
+        flash('Student not found or access denied.', 'danger')
+        return redirect(url_for('class_fee_sheet', **{'class': selected_class, 'month': month, 'year': year}))
+        
+    existing_payment = conn.execute(
+        "SELECT id, paid_amount FROM fees WHERE student_id = ? AND month = ? AND year = ?",
+        (student_id, month, year)
+    ).fetchone()
+    
+    if existing_payment:
+        conn.execute(
+            "UPDATE fees SET paid_amount = ?, date_paid = ?, payment_mode = ?, reference_no = ?, notes = ?, collected_by = ? WHERE id = ?",
+            (paid_amount, date_paid, payment_mode, reference_no, notes, collected_by, existing_payment['id'])
+        )
+        flash(f"Updated fee for {student['name']}: Rs. {paid_amount:,.0f} ({month} {year}) via {payment_mode} recorded successfully!", 'success')
+    else:
+        conn.execute('''
+            INSERT INTO fees (student_id, month, year, paid_amount, date_paid, payment_mode, reference_no, notes, collected_by, campus_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (student_id, month, year, paid_amount, date_paid, payment_mode, reference_no, notes, collected_by, student['campus_id']))
+        flash(f"Recorded fee payment of Rs. {paid_amount:,.0f} for {student['name']} ({month} {year}) via {payment_mode} successfully!", 'success')
+        
+    conn.commit()
+    conn.close()
+    
+    return redirect(url_for('class_fee_sheet', **{'class': selected_class or student['class'], 'month': month, 'year': year}))
+
+@app.route('/fee/class-sheet/export')
+@login_required
+def export_class_fee_sheet():
+    target_class = request.args.get('class', '').strip()
+    target_month = request.args.get('month', MONTH_NUM_TO_NAME[datetime.now().month])
+    target_year = request.args.get('year', datetime.now().year, type=int)
+    active_campus_id = get_active_campus_id()
+    
+    conn = get_db_connection()
+    s_query = "SELECT * FROM students WHERE 1=1"
+    s_params = []
+    if target_class:
+        s_query += " AND class = ?"
+        s_params.append(target_class)
+    if active_campus_id:
+        s_query += " AND campus_id = ?"
+        s_params.append(active_campus_id)
+    s_query += " AND (status IS NULL OR status = 'active') ORDER BY class, id"
+    students = conn.execute(s_query, s_params).fetchall()
+    
+    student_ids = [s['id'] for s in students]
+    fees_map = {sid: [] for sid in student_ids}
+    if student_ids:
+        placeholders = ','.join(['?'] * len(student_ids))
+        all_fees = conn.execute(
+            f"SELECT student_id, month, year, paid_amount FROM fees WHERE student_id IN ({placeholders})",
+            student_ids
+        ).fetchall()
+        for f in all_fees:
+            fees_map[f['student_id']].append(f)
+            
+    conn.close()
+    
+    rows = []
+    for s in students:
+        details = get_student_fee_details(s, target_month, target_year, payments=fees_map.get(s['id'], []))
+        paid = details['paid_this_month']
+        rem = details['remaining_payable']
+        status = 'Paid' if (rem <= 0 and (paid > 0 or details['total_payable'] == 0)) else ('Partial' if (paid > 0 and rem > 0) else 'Unpaid')
+        rows.append({
+            'Roll / ID': s['id'],
+            'Student Name': s['name'],
+            'Father Name': s['father_name'] or '',
+            'Phone / WhatsApp': s['phone_number'] or '',
+            'Class': s['class'],
+            'Billing Month': f"{target_month} {target_year}",
+            'Monthly Tuition Fee (Rs.)': details['monthly_fee'],
+            'Previous Arrears (Rs.)': details['arrears'],
+            'Total Payable (Rs.)': details['total_payable'],
+            'Paid Amount (Rs.)': paid,
+            'Remaining Balance (Rs.)': rem,
+            'Payment Status': status
+        })
+        
+    df = pd.DataFrame(rows) if rows else pd.DataFrame(columns=[
+        'Roll / ID', 'Student Name', 'Father Name', 'Phone / WhatsApp', 'Class',
+        'Billing Month', 'Monthly Tuition Fee (Rs.)', 'Previous Arrears (Rs.)',
+        'Total Payable (Rs.)', 'Paid Amount (Rs.)', 'Remaining Balance (Rs.)', 'Payment Status'
+    ])
+    
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        sheet_name = f"Class {target_class}" if target_class else "All Classes"
+        df.to_excel(writer, sheet_name=sheet_name[:31], index=False)
+        ws = writer.sheets[sheet_name[:31]]
+        
+        from openpyxl.styles import Font, PatternFill, Alignment
+        header_fill = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
+        header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+        
+        for cell in ws[1]:
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+            
+        from openpyxl.utils import get_column_letter
+        for col in ws.columns:
+            max_len = max(len(str(cell.value or '')) for cell in col)
+            col_letter = get_column_letter(col[0].column)
+            ws.column_dimensions[col_letter].width = max(max_len + 4, 14)
+            
+    output.seek(0)
+    safe_class = re.sub(r'[^a-zA-Z0-9_-]', '_', target_class or 'All')
+    filename = f"Fee_Sheet_Class_{safe_class}_{target_month}_{target_year}.xlsx"
+    return send_file(output, as_attachment=True, download_name=filename, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 @app.route('/students/<int:student_id>/ledger')
 @app.route('/fee/history/<int:student_id>')

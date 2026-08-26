@@ -16,43 +16,102 @@ function initStudentSearch(inputId, listId, selectId) {
     
     if (!input || !select) return;
     
-    // Create suggestion list dynamically
-    const wrapper = input.parentElement;
-    const suggestions = document.createElement('div');
-    suggestions.id = listId;
-    suggestions.className = 'suggestions-list d-none';
-    wrapper.appendChild(suggestions);
+    // Create suggestion list dynamically if not existing
+    let wrapper = input.parentElement;
+    let suggestions = document.getElementById(listId);
+    if (!suggestions) {
+        suggestions = document.createElement('div');
+        suggestions.id = listId;
+        suggestions.className = 'suggestions-list d-none';
+        wrapper.appendChild(suggestions);
+    }
     
     // Extract student options from the hidden select
     const students = [];
     for (let option of select.options) {
         if (option.value) {
             students.push({
-                id: option.value,
+                id: option.value.toString(),
                 name: option.getAttribute('data-name') || option.text,
                 father: option.getAttribute('data-father') || '',
-                class: option.getAttribute('data-class') || ''
+                class: option.getAttribute('data-class') || '',
+                barcode: 'STD-' + option.value.toString()
             });
         }
     }
     
-    // Handle input typing
+    function selectStudent(student) {
+        input.value = student.name;
+        select.value = student.id;
+        suggestions.classList.add('d-none');
+        
+        // Trigger change event on select to auto-load student fee details
+        const event = new Event('change');
+        select.dispatchEvent(event);
+    }
+    
+    function cleanDigitsMatch(q, id) {
+        const clean = q.toLowerCase().replace(/^[a-z]+[-_]?/i, '');
+        return clean.length >= 1 && clean === id;
+    }
+    
+    function getFilteredStudents(rawQuery) {
+        if (!rawQuery) return [];
+        const query = rawQuery.trim().toLowerCase();
+        const cleanDigits = query.replace(/^[a-z]+[-_]?/i, '');
+        
+        return students.filter(s => 
+            s.name.toLowerCase().includes(query) || 
+            s.father.toLowerCase().includes(query) ||
+            s.class.toLowerCase().includes(query) ||
+            s.id === query ||
+            s.id === cleanDigits ||
+            s.barcode.toLowerCase() === query ||
+            s.barcode.toLowerCase().includes(query) ||
+            s.id.includes(query)
+        );
+    }
+    
+    // Handle input typing & barcode scanning
     input.addEventListener('input', function() {
-        const query = this.value.trim().toLowerCase();
+        const query = this.value.trim();
         
         if (!query) {
             suggestions.classList.add('d-none');
             return;
         }
         
-        const filtered = students.filter(s => 
-            s.name.toLowerCase().includes(query) || 
-            s.father.toLowerCase().includes(query) ||
-            s.class.toLowerCase().includes(query) ||
-            s.id.includes(query)
-        ).slice(0, 10); // Limit to top 10 results
+        const filtered = getFilteredStudents(query);
         
-        renderSuggestions(filtered);
+        // If an exact barcode or ID match was scanned/typed (e.g. from a barcode gun)
+        const exactMatch = students.find(s => 
+            s.barcode.toLowerCase() === query.toLowerCase() || 
+            s.id === query || 
+            cleanDigitsMatch(query, s.id)
+        );
+        
+        renderSuggestions(filtered.slice(0, 10));
+    });
+    
+    // Handle barcode scanner Enter key event (scanners emit Enter on scan)
+    input.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            const query = this.value.trim();
+            if (!query) return;
+            
+            const filtered = getFilteredStudents(query);
+            if (filtered.length > 0) {
+                // Prioritize exact barcode / ID match or pick first result
+                const exact = filtered.find(s => 
+                    s.id === query || 
+                    s.barcode.toLowerCase() === query.toLowerCase() || 
+                    cleanDigitsMatch(query, s.id)
+                ) || filtered[0];
+                
+                selectStudent(exact);
+            }
+        }
     });
     
     // Hide suggestions when clicking outside
@@ -65,13 +124,14 @@ function initStudentSearch(inputId, listId, selectId) {
     // Focus in shows list if input has query
     input.addEventListener('focus', function() {
         if (this.value.trim()) {
-            suggestions.classList.remove('d-none');
+            const filtered = getFilteredStudents(this.value);
+            renderSuggestions(filtered.slice(0, 10));
         }
     });
     
     function renderSuggestions(list) {
         if (list.length === 0) {
-            suggestions.innerHTML = '<div class="suggestion-item text-muted">No student found</div>';
+            suggestions.innerHTML = '<div class="suggestion-item text-muted">No student found for this ID / Barcode</div>';
             suggestions.classList.remove('d-none');
             return;
         }
@@ -82,17 +142,11 @@ function initStudentSearch(inputId, listId, selectId) {
             div.className = 'suggestion-item';
             div.innerHTML = `
                 <div class="fw-bold">${student.name} <span class="badge badge-class float-end">${student.class}</span></div>
-                <div class="text-secondary small">Father: ${student.father} | ID: ${student.id}</div>
+                <div class="text-secondary small">Father: ${student.father} &bull; <span class="badge bg-dark border border-secondary text-info font-monospace" style="font-size: 0.7rem;"><i class="fa-solid fa-barcode me-1"></i>STD-${student.id}</span></div>
             `;
             
             div.addEventListener('click', function() {
-                input.value = student.name;
-                select.value = student.id;
-                suggestions.classList.add('d-none');
-                
-                // Trigger change event on select to auto-load student fee details
-                const event = new Event('change');
-                select.dispatchEvent(event);
+                selectStudent(student);
             });
             
             suggestions.appendChild(div);
