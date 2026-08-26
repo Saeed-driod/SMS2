@@ -17,8 +17,8 @@
 
 <!-- Filter Selection Bar -->
 <div class="glass-panel mb-4 no-print">
-    <form action="{{ url_for('defaulters_view') }}" method="GET" class="row g-3 align-items-end">
-        <div class="col-md-3">
+    <form action="{{ url_for('defaulters_view') }}" method="GET" id="defaulterFilterForm" class="row g-3 align-items-end">
+        <div class="col-lg-2 col-md-4 col-sm-6">
             <label for="month" class="form-label">Billing Month</label>
             <select class="form-select" id="month" name="month">
                 {% for m in months %}
@@ -26,7 +26,7 @@
                 {% endfor %}
             </select>
         </div>
-        <div class="col-md-3">
+        <div class="col-lg-2 col-md-4 col-sm-6">
             <label for="year" class="form-label">Billing Year</label>
             <select class="form-select" id="year" name="year">
                 {% for y in years %}
@@ -34,7 +34,7 @@
                 {% endfor %}
             </select>
         </div>
-        <div class="col-md-4">
+        <div class="col-lg-3 col-md-4 col-sm-6">
             <label for="class_filter" class="form-label">Class Filter</label>
             <select class="form-select" id="class_filter" name="class_filter">
                 <option value="">All Classes</option>
@@ -43,10 +43,39 @@
                 {% endfor %}
             </select>
         </div>
-        <div class="col-md-2">
-            <button type="submit" class="btn btn-primary w-100">
-                <i class="fa-solid fa-arrows-rotate me-1"></i> Refresh
+        <div class="col-lg-3 col-md-6 col-sm-6">
+            <label for="min_amount" class="form-label d-flex justify-content-between">
+                <span>Min Amount (Dues &ge;)</span>
+                {% if min_amount %}
+                <span class="text-danger small font-monospace">&ge; Rs. {{ min_amount }}</span>
+                {% endif %}
+            </label>
+            <div class="input-group">
+                <span class="input-group-text bg-dark border-secondary text-secondary">Rs.</span>
+                <input type="number" step="any" min="0" class="form-control" id="min_amount" name="min_amount" placeholder="e.g. 5000" value="{{ min_amount }}">
+            </div>
+        </div>
+        <div class="col-lg-2 col-md-6 col-sm-12 d-flex gap-2">
+            <button type="submit" class="btn btn-primary flex-grow-1">
+                <i class="fa-solid fa-filter me-1"></i> Filter
             </button>
+            {% if min_amount or class_filter %}
+            <a href="{{ url_for('defaulters_view', month=target_month, year=target_year) }}" class="btn btn-outline-secondary" title="Reset Filters">
+                <i class="fa-solid fa-xmark"></i>
+            </a>
+            {% endif %}
+        </div>
+        
+        <!-- Quick Preset Badges -->
+        <div class="col-12 pt-1">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <span class="text-secondary small me-1"><i class="fa-solid fa-bolt text-warning me-1"></i>Quick Filter:</span>
+                <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2 rounded-pill small" onclick="setAndSubmitMinAmount('')">All Defaulters</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2 rounded-pill small" onclick="setAndSubmitMinAmount('1000')">&ge; 1,000</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2 rounded-pill small" onclick="setAndSubmitMinAmount('3000')">&ge; 3,000</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2 rounded-pill small" onclick="setAndSubmitMinAmount('5000')">&ge; 5,000</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2 rounded-pill small" onclick="setAndSubmitMinAmount('10000')">&ge; 10,000</button>
+            </div>
         </div>
     </form>
 </div>
@@ -55,7 +84,19 @@
 <div class="total-defaulters-banner d-flex justify-content-between align-items-center flex-wrap g-3 mb-4">
     <div>
         <h4 class="mb-1 text-danger font-weight-bold"><i class="fa-solid fa-triangle-exclamation me-2"></i>Outstanding Recovery</h4>
-        <span class="text-secondary small">Total unpaid amount across listed defaulters</span>
+        <span class="text-secondary small">
+            Total unpaid amount across listed defaulters
+            {% if min_amount %}
+            <span class="badge bg-danger bg-opacity-25 text-danger border border-danger ms-2">
+                <i class="fa-solid fa-filter me-1"></i>Dues &ge; Rs. {{ min_amount }}
+            </span>
+            {% endif %}
+            {% if class_filter %}
+            <span class="badge bg-primary bg-opacity-25 text-info border border-info ms-1">
+                Class {{ class_filter }}
+            </span>
+            {% endif %}
+        </span>
     </div>
     <div class="text-md-end">
         <span class="text-secondary small d-block">Total Defaulter Balance</span>
@@ -66,7 +107,12 @@
 <!-- Defaulters Table -->
 <div class="glass-panel">
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h5 class="mb-0 text-secondary text-uppercase small">Defaulter Students (Count: {{ defaulters|length }})</h5>
+        <h5 class="mb-0 text-secondary text-uppercase small">
+            Defaulter Students (Count: {{ defaulters|length }})
+            {% if min_amount %}
+            <span class="text-muted text-lowercase font-normal ms-1">(with dues &ge; Rs. {{ min_amount }})</span>
+            {% endif %}
+        </h5>
     </div>
     
     <div class="table-responsive">
@@ -135,9 +181,13 @@
                     {% endfor %}
                 {% else %}
                     <tr>
-                        <td colspan="{% if session.role == 'admin' and not active_campus_id %}11{% else %}10{% endif %}" class="text-center text-secondary py-5">
+                        <td colspan="{% if session.role == 'admin' and not active_campus_id %}12{% else %}11{% endif %}" class="text-center text-secondary py-5">
                             <i class="fa-solid fa-circle-check d-block fs-3 mb-3 text-success"></i>
+                            {% if min_amount %}
+                            No defaulters found with balance &ge; Rs. {{ min_amount }} for this period.
+                            {% else %}
                             All accounts settled! No outstanding defaulters for this period.
+                            {% endif %}
                         </td>
                     </tr>
                 {% endif %}
@@ -145,4 +195,11 @@
         </table>
     </div>
 </div>
+
+<script>
+function setAndSubmitMinAmount(val) {
+    document.getElementById('min_amount').value = val;
+    document.getElementById('defaulterFilterForm').submit();
+}
+</script>
 {% endblock %}

@@ -1764,6 +1764,12 @@ def defaulters_view():
     target_month = request.args.get('month', MONTH_NUM_TO_NAME[datetime.now().month])
     target_year = request.args.get('year', datetime.now().year, type=int)
     class_filter = request.args.get('class_filter', '').strip()
+    min_amount_raw = request.args.get('min_amount', '').strip()
+    try:
+        min_amount = float(min_amount_raw) if min_amount_raw else 0.0
+    except (ValueError, TypeError):
+        min_amount = 0.0
+        min_amount_raw = ''
     
     active_campus_id = get_active_campus_id()
     conn = get_db_connection()
@@ -1810,6 +1816,8 @@ def defaulters_view():
     for s in students:
         details = get_student_fee_details(s, target_month, target_year, payments=fees_map.get(s['id'], []))
         if details['remaining_payable'] > 0:
+            if min_amount > 0 and details['remaining_payable'] < min_amount:
+                continue
             defaulters.append({
                 'id': s['id'],
                 'name': s['name'],
@@ -1834,6 +1842,7 @@ def defaulters_view():
                            defaulters=defaulters,
                            classes=classes,
                            class_filter=class_filter,
+                           min_amount=min_amount_raw,
                            target_month=target_month,
                            target_year=target_year,
                            months=months,
