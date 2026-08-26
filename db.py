@@ -3,17 +3,19 @@ import re
 import sqlite3
 from datetime import datetime
 
-# Check if PostgreSQL DATABASE_URL is configured (e.g. on Render)
-DATABASE_URL = os.environ.get('DATABASE_URL')
-# Normalize postgres:// to postgresql:// if needed for psycopg2
-if DATABASE_URL and DATABASE_URL.startswith('postgres://'):
-    DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
+def get_database_url():
+    url = os.environ.get('DATABASE_URL')
+    if url:
+        url = url.strip().strip("'\"")
+        if url.startswith('postgres://'):
+            url = url.replace('postgres://', 'postgresql://', 1)
+    return url
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SQLITE_DB_PATH = os.path.join(BASE_DIR, 'sms.db')
 
 def is_postgres():
-    return bool(DATABASE_URL)
+    return bool(get_database_url())
 
 class PgRow:
     """Row object that supports both dict indexing (row['name']) and tuple indexing (row[0]), mirroring sqlite3.Row."""
@@ -163,9 +165,10 @@ class PgConnectionWrapper:
 
 def get_db_connection():
     """Returns an active database connection (PostgreSQL if DATABASE_URL is set, otherwise SQLite)."""
-    if is_postgres():
+    db_url = get_database_url()
+    if db_url:
         import psycopg2
-        conn = psycopg2.connect(DATABASE_URL)
+        conn = psycopg2.connect(db_url)
         return PgConnectionWrapper(conn)
     else:
         conn = sqlite3.connect(SQLITE_DB_PATH)
