@@ -198,14 +198,29 @@
         </div>
     </div>
     <div class="d-flex justify-content-between align-items-center py-2.5">
-        <span class="text-secondary">Remaining Balance:</span>
+        <span class="text-secondary">Tuition Fee Remaining:</span>
         <span class="badge bg-danger bg-opacity-20 text-danger border border-danger border-opacity-30 fs-6 px-3 py-1.5">Rs. {{ "{:,.0f}".format(arrears_info.remaining_payable) }}</span>
     </div>
 {% else %}
     <div class="d-flex justify-content-between align-items-center py-2.5">
-        <span class="text-secondary">Remaining Balance:</span>
-        <span class="badge bg-success bg-opacity-20 text-success border border-success border-opacity-30 fs-6 px-3 py-1.5">Rs. 0</span>
+        <span class="text-secondary">Tuition Fee Remaining:</span>
+        <span class="badge bg-success bg-opacity-20 text-success border border-success border-opacity-30 fs-6 px-3 py-1.5">Rs. 0 (Clear)</span>
     </div>
+{% endif %}
+
+{% if annual_info and annual_info.annual_charges > 0 %}
+<div class="d-flex justify-content-between align-items-center py-2.5 border-top border-light-subtle my-2">
+    <span class="text-secondary"><i class="fa-solid fa-calendar-check text-warning me-1"></i> Annual Charges ({{ target_year }}):</span>
+    {% if annual_info.is_paid %}
+    <span class="badge bg-success bg-opacity-20 text-success border border-success border-opacity-30 px-2.5 py-1">
+        <i class="fa-solid fa-check me-1"></i> Paid (Rs. {{ "{:,.0f}".format(annual_info.paid_amount) }})
+    </span>
+    {% else %}
+    <span class="badge bg-warning bg-opacity-20 text-warning border border-warning border-opacity-30 px-2.5 py-1" title="Unpaid Annual Charges for {{ target_year }}">
+        <i class="fa-solid fa-triangle-exclamation me-1"></i> Unpaid: Rs. {{ "{:,.0f}".format(annual_info.unpaid_amount) }}
+    </span>
+    {% endif %}
+</div>
 {% endif %}
 
             <div class="d-flex gap-2">

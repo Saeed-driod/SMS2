@@ -1201,6 +1201,7 @@ def fee_entry():
     target_month = request.args.get('month', MONTH_NUM_TO_NAME[datetime.now().month])
     target_year = request.args.get('year', datetime.now().year, type=int)
     
+    annual_info = None
     if selected_student_id:
         selected_student = conn.execute("SELECT * FROM students WHERE id = ?", (selected_student_id,)).fetchone()
         if selected_student and active_campus_id and selected_student['campus_id'] != active_campus_id:
@@ -1208,6 +1209,19 @@ def fee_entry():
             
         if selected_student:
             arrears_info = get_student_fee_details(selected_student, target_month, target_year)
+            ann_charges = float(selected_student['annual_charges'] or 0.0) if 'annual_charges' in selected_student.keys() else 0.0
+            paid_ann_row = conn.execute(
+                "SELECT SUM(paid_amount) as total_paid FROM annual_charges_payments WHERE student_id = ? AND year = ?",
+                (selected_student['id'], target_year)
+            ).fetchone()
+            paid_ann = float(paid_ann_row['total_paid'] or 0.0) if paid_ann_row and paid_ann_row['total_paid'] is not None else 0.0
+            unpaid_ann = max(0.0, ann_charges - paid_ann)
+            annual_info = {
+                'annual_charges': ann_charges,
+                'paid_amount': paid_ann,
+                'unpaid_amount': unpaid_ann,
+                'is_paid': (ann_charges > 0 and unpaid_ann <= 0) or (ann_charges == 0)
+            }
             
     if request.method == 'POST':
         student_id = int(request.form['student_id'])
@@ -1289,6 +1303,7 @@ def fee_entry():
                            target_year=target_year,
                            months=MONTH_NUM_TO_NAME,
                            years=[2025, 2026, 2027, 2028],
+                           annual_info=annual_info,
                            current_date=datetime.now().strftime('%Y-%m-%d'))
 
 @app.route('/students/<int:student_id>/ledger')
@@ -1468,15 +1483,15 @@ def voucher_print():
 
     def get_unpaid_annual_charges(student, yr):
         """Return unpaid annual charges amount for the given student and year."""
-        annual_charges = student['annual_charges'] or 0
+        annual_charges = float(student['annual_charges'] or 0.0) if 'annual_charges' in student.keys() else 0.0
         if annual_charges <= 0:
-            return 0
+            return 0.0
         paid_rec = conn.execute(
-            "SELECT paid_amount FROM annual_charges_payments WHERE student_id = ? AND year = ?",
+            "SELECT SUM(paid_amount) FROM annual_charges_payments WHERE student_id = ? AND year = ?",
             (student['id'], yr)
         ).fetchone()
-        paid_annual = paid_rec['paid_amount'] if paid_rec else 0
-        return max(0, annual_charges - paid_annual)
+        paid_annual = float(paid_rec[0] or 0.0) if paid_rec and paid_rec[0] is not None else 0.0
+        return max(0.0, annual_charges - paid_annual)
 
     if generate_class:
         # Fetch all students belonging to the selected class (and campus if filtered)
@@ -1491,10 +1506,18 @@ def voucher_print():
         for student in students:
             settings = get_campus_settings(student['campus_id'])
             fee_details = get_student_fee_details(student, month, year)
+            
             # Auto-include unpaid annual charges (if no manual other_dues set)
             unpaid_annual = get_unpaid_annual_charges(student, year)
-            auto_other_dues = other_dues if other_dues > 0 else unpaid_annual
-            auto_other_dues_desc = other_dues_desc if other_dues > 0 else (f'Annual Charges {year}' if unpaid_annual > 0 else other_dues_desc)
+            if other_dues > 0:
+                auto_other_dues = other_dues
+                auto_other_dues_desc = other_dues_desc or f"Annual Charges {year}"
+            elif unpaid_annual > 0:
+                auto_other_dues = unpaid_annual
+                auto_other_dues_desc = f"Annual Charges {year}"
+            else:
+                auto_other_dues = 0.0
+                auto_other_dues_desc = ""
             
             # Distribute paid_this_month across arrears and generated months
             available_paid = fee_details['paid_this_month']
@@ -1520,14 +1543,17 @@ def voucher_print():
                 total_months_fee += m_fee
                 
             fee_details['remaining_payable'] = display_arrears + total_months_fee
-            current_other_dues = auto_other_dues
             
-            # If the student has no remaining payable amount, clear everything
+            # If tuition fee is already paid, zero out monthly breakdown but KEEP annual charges intact
             if fee_details['remaining_payable'] <= 0:
                 display_arrears = 0
                 for m in multi_months_list:
                     m['fee'] = 0
-                current_other_dues = 0
+                fee_details['remaining_payable'] = 0
+
+            current_other_dues = auto_other_dues
+            payable_by_due = fee_details['remaining_payable'] + current_other_dues
+            
             # Determine due date (use default if not supplied)
             if not due_date:
                 due_day = int(settings.get('due_day', 10))
@@ -1535,10 +1561,10 @@ def voucher_print():
                 calc_due = f"{due_day:02d}-{month_num:02d}-{year}"
             else:
                 calc_due = due_date
+                
             late_fee = float(settings.get('late_fee', 100))
-            payable_by_due = fee_details['remaining_payable'] + current_other_dues
-            # No late fee if nothing is payable
             payable_after_due = payable_by_due + (late_fee if payable_by_due > 0 else 0)
+            
             vouchers.append({
                 'school_name': settings.get('school_name', 'Alliedian School Al-Rehman Campus, Okara'),
                 'bank_name': settings.get('bank_name', 'MCB Bank Limited'),
@@ -1562,7 +1588,7 @@ def voucher_print():
         conn.close()
         return render_template('voucher_class.html', vouchers=vouchers)
     else:
-        # Single student path – retain original behaviour
+        # Single student path
         if not student_id:
             conn.close()
             flash('Invalid parameters for voucher generation.', 'danger')
@@ -1600,28 +1626,36 @@ def voucher_print():
             
         # Auto-include unpaid annual charges for single student
         unpaid_annual = get_unpaid_annual_charges(student, year)
-        auto_other_dues = other_dues if other_dues > 0 else unpaid_annual
-        auto_other_dues_desc = other_dues_desc if other_dues > 0 else (f'Annual Charges {year}' if unpaid_annual > 0 else other_dues_desc)
+        if other_dues > 0:
+            auto_other_dues = other_dues
+            auto_other_dues_desc = other_dues_desc or f"Annual Charges {year}"
+        elif unpaid_annual > 0:
+            auto_other_dues = unpaid_annual
+            auto_other_dues_desc = f"Annual Charges {year}"
+        else:
+            auto_other_dues = 0.0
+            auto_other_dues_desc = ""
 
         fee_details['remaining_payable'] = display_arrears + total_months_fee
-        current_other_dues = auto_other_dues
         
-        # If the student has no remaining payable amount, clear everything
+        # If tuition fee is already paid, zero out monthly breakdown but KEEP annual charges intact
         if fee_details['remaining_payable'] <= 0:
             display_arrears = 0
             for m in multi_months_list:
                 m['fee'] = 0
-            current_other_dues = 0
+            fee_details['remaining_payable'] = 0
+
+        current_other_dues = auto_other_dues
+        payable_by_due = fee_details['remaining_payable'] + current_other_dues
 
         if not due_date:
             due_day = int(settings.get('due_day', 10))
             month_num = MONTH_NAME_TO_NUM.get(month, 1)
             due_date = f"{due_day:02d}-{month_num:02d}-{year}"
+            
         late_fee = float(settings.get('late_fee', 100))
-        if fee_details['remaining_payable'] == 0:
-            late_fee = 0
-        payable_by_due = fee_details['remaining_payable'] + current_other_dues
         payable_after_due = payable_by_due + (late_fee if payable_by_due > 0 else 0)
+        
         voucher_data = {
             'school_name': settings.get('school_name', 'Alliedian School Al-Rehman Campus, Okara'),
             'bank_name': settings.get('bank_name', 'MCB Bank Limited'),
@@ -1639,7 +1673,7 @@ def voucher_print():
             'other_dues_desc': auto_other_dues_desc,
             'payable_by_due': payable_by_due,
             'payable_after_due': payable_after_due,
-            'late_fee': late_fee
+            'late_fee': late_fee if payable_by_due > 0 else 0
         }
         conn.close()
         return render_template('voucher.html', data=voucher_data)

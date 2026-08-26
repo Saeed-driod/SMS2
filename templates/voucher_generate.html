@@ -73,14 +73,14 @@
                 <!-- Other Dues -->
                 <div class="row g-3 mb-4">
                     <div class="col-md-6">
-                        <label for="other_dues_desc" class="form-label">Other Dues Description (Optional)</label>
-                        <input type="text" class="form-control" id="other_dues_desc" name="other_dues_desc" placeholder="e.g. Annual subscription, Fine, etc.">
-                        <div class="form-text text-secondary small">Default: Annual subscription {{ current_year }}</div>
+                        <label for="other_dues_desc" class="form-label">Other Dues / Charges Description (Optional)</label>
+                        <input type="text" class="form-control" id="other_dues_desc" name="other_dues_desc" placeholder="e.g. Annual Charges, Exam Fee, etc.">
+                        <div class="form-text text-secondary small"><i class="fa-solid fa-sparkles text-warning me-1"></i>Default: Automatically applies <strong>Annual Charges {{ current_year }}</strong> if unpaid.</div>
                     </div>
                     <div class="col-md-6">
-                        <label for="other_dues" class="form-label">Other Dues Amount (Rs.)</label>
+                        <label for="other_dues" class="form-label">Custom Other Dues (Rs.)</label>
                         <input type="number" step="0.01" class="form-control" id="other_dues" name="other_dues" placeholder="0">
-                        <div class="form-text text-secondary small">Leave blank or 0 if none.</div>
+                        <div class="form-text text-secondary small">Leave blank or 0 to auto-include unpaid Annual Charges.</div>
                     </div>
                 </div>
 
