@@ -37,10 +37,14 @@ except Exception as e:
     print(f"Database initialization note: {e}")
 
 # Helper function to get campus settings
-def get_campus_settings(campus_id):
-    conn = get_db_connection()
+def get_campus_settings(campus_id, conn=None):
+    close_after = False
+    if conn is None:
+        conn = get_db_connection()
+        close_after = True
     rows = conn.execute("SELECT key, value FROM settings").fetchall()
-    conn.close()
+    if close_after:
+        conn.close()
     
     settings = {row['key']: row['value'] for row in rows}
     
@@ -102,11 +106,11 @@ def inject_campuses():
     return {}
 
 # Helper function to calculate student fees, arrears, and totals
-def get_student_fee_details(student, target_month_name, target_year, months=1):
+def get_student_fee_details(student, target_month_name, target_year, months=1, payments=None):
     student_id = student['id']
-    monthly_fee = student['monthly_fee']
-    start_month = student['start_month']
-    start_year = student['start_year']
+    monthly_fee = float(student['monthly_fee'] or 0.0)
+    start_month = int(student['start_month'] or 3)
+    start_year = int(student['start_year'] or 2026)
     opening_arrears = float(student['opening_arrears'] or 0.0) if 'opening_arrears' in student.keys() else 0.0
     
     target_month_num = MONTH_NAME_TO_NUM.get(target_month_name, 3)
@@ -119,11 +123,13 @@ def get_student_fee_details(student, target_month_name, target_year, months=1):
     
     total_due_prior = opening_arrears + (monthly_fee * months_diff)
     
-    conn = get_db_connection()
-    payments = conn.execute(
-        "SELECT month, year, paid_amount FROM fees WHERE student_id = ?",
-        (student_id,)
-    ).fetchall()
+    if payments is None:
+        conn = get_db_connection()
+        payments = conn.execute(
+            "SELECT month, year, paid_amount FROM fees WHERE student_id = ?",
+            (student_id,)
+        ).fetchall()
+        conn.close()
     
     total_paid_prior = 0.0
     paid_target_month = 0.0
@@ -131,7 +137,7 @@ def get_student_fee_details(student, target_month_name, target_year, months=1):
     for p in payments:
         p_month_name = p['month']
         p_year = p['year']
-        p_amount = p['paid_amount']
+        p_amount = float(p['paid_amount'] or 0.0)
         
         p_month_num = MONTH_NAME_TO_NUM.get(p_month_name, 0)
         
@@ -148,8 +154,6 @@ def get_student_fee_details(student, target_month_name, target_year, months=1):
         elif p_year == target_year and p_month_num == target_month_num:
             paid_target_month += p_amount
             
-    conn.close()
-    
     arrears = max(0.0, total_due_prior - total_paid_prior)
     # total payable includes arrears plus fee for the number of months being paid now
     total_payable = monthly_fee * months + arrears
@@ -1475,7 +1479,7 @@ def voucher_print():
     month = request.args.get('month')
     year = request.args.get('year', type=int)
     due_date = request.args.get('due_date')
-    generate_class = request.args.get('class_voucher') is not None and selected_class
+    generate_class = bool(selected_class and (not student_id or request.args.get('class_voucher') is not None))
     num_months = request.args.get('num_months', 1, type=int)
 
     # Calculate end_month if num_months > 1
@@ -1502,28 +1506,85 @@ def voucher_print():
         if annual_charges <= 0:
             return 0.0
         paid_rec = conn.execute(
-            "SELECT SUM(paid_amount) FROM annual_charges_payments WHERE student_id = ? AND year = ? AND (notes IS NULL OR (notes NOT LIKE '%Summer Pack%' AND notes NOT LIKE '%SP%'))",
-            (student['id'], yr)
+            "SELECT SUM(paid_amount) FROM annual_charges_payments WHERE student_id = ? AND year = ? AND (notes IS NULL OR (notes NOT LIKE ? AND notes NOT LIKE ?))",
+            (student['id'], yr, '%Summer Pack%', '%SP%')
         ).fetchone()
         paid_annual = float(paid_rec[0] or 0.0) if paid_rec and paid_rec[0] is not None else 0.0
         return max(0.0, annual_charges - paid_annual)
 
     if generate_class:
         # Fetch all students belonging to the selected class (and campus if filtered)
-        query = "SELECT * FROM students WHERE class = ?"
+        query = "SELECT * FROM students WHERE class = ? AND (status IS NULL OR status = 'active')"
         params = [selected_class]
         if active_campus_id:
             query += " AND campus_id = ?"
             params.append(active_campus_id)
+        query += " ORDER BY id ASC"
         students = conn.execute(query, params).fetchall()
+
+        if not students:
+            conn.close()
+            flash('No active students found in the selected class.', 'warning')
+            return redirect(url_for('voucher_generate'))
+
+        student_ids = [s['id'] for s in students]
+
+        # 1. Batch fetch all fees for these students in ONE query
+        fees_map = {sid: [] for sid in student_ids}
+        if student_ids:
+            placeholders = ','.join(['?'] * len(student_ids))
+            all_fees = conn.execute(
+                f"SELECT student_id, month, year, paid_amount FROM fees WHERE student_id IN ({placeholders})",
+                student_ids
+            ).fetchall()
+            for f in all_fees:
+                fees_map[f['student_id']].append(f)
+
+        # 2. Batch fetch all annual charges payments for these students in ONE query
+        ac_map = {sid: 0.0 for sid in student_ids}
+        if student_ids:
+            placeholders = ','.join(['?'] * len(student_ids))
+            all_ac = conn.execute(
+                f"""SELECT student_id, SUM(paid_amount) 
+                    FROM annual_charges_payments 
+                    WHERE student_id IN ({placeholders}) AND year = ? AND (notes IS NULL OR (notes NOT LIKE ? AND notes NOT LIKE ?))
+                    GROUP BY student_id""",
+                student_ids + [year, '%Summer Pack%', '%SP%']
+            ).fetchall()
+            for r in all_ac:
+                ac_map[r[0]] = float(r[1] or 0.0)
+
+        # 3. Cache campus settings in memory
+        all_settings_rows = conn.execute("SELECT key, value FROM settings").fetchall()
+        base_settings = {row['key']: row['value'] for row in all_settings_rows}
+        
+        def resolve_settings_for_campus(cid):
+            s = dict(base_settings)
+            if cid:
+                for k in list(base_settings.keys()):
+                    ck = f"{k}_{cid}"
+                    if ck in base_settings:
+                        s[k] = base_settings[ck]
+            return s
+            
+        campus_ids = list(set(s['campus_id'] for s in students if s['campus_id']))
+        settings_cache = {cid: resolve_settings_for_campus(cid) for cid in campus_ids}
+        default_settings = resolve_settings_for_campus(active_campus_id or 1)
 
         vouchers = []
         for student in students:
-            settings = get_campus_settings(student['campus_id'])
-            fee_details = get_student_fee_details(student, month, year)
+            sid = student['id']
+            settings = settings_cache.get(student['campus_id'], default_settings)
+            
+            # Pass pre-fetched fees to avoid any db calls
+            fee_details = get_student_fee_details(student, month, year, payments=fees_map.get(sid, []))
+            
+            # Calculate unpaid annual charges in memory
+            annual_charges = float(student['annual_charges'] or 0.0) if 'annual_charges' in student.keys() else 0.0
+            paid_annual = ac_map.get(sid, 0.0)
+            unpaid_annual = max(0.0, annual_charges - paid_annual) if annual_charges > 0 else 0.0
             
             # Auto-include unpaid annual charges (if no manual other_dues set)
-            unpaid_annual = get_unpaid_annual_charges(student, year)
             if other_dues > 0:
                 auto_other_dues = other_dues
                 auto_other_dues_desc = other_dues_desc or f"Annual Charges {year}"
@@ -1732,11 +1793,22 @@ def defaulters_view():
         
     students = conn.execute(query, params).fetchall()
     
+    student_ids = [s['id'] for s in students]
+    fees_map = {sid: [] for sid in student_ids}
+    if student_ids:
+        placeholders = ','.join(['?'] * len(student_ids))
+        all_fees = conn.execute(
+            f"SELECT student_id, month, year, paid_amount FROM fees WHERE student_id IN ({placeholders})",
+            student_ids
+        ).fetchall()
+        for f in all_fees:
+            fees_map[f['student_id']].append(f)
+            
     defaulters = []
     total_defaulter_amount = 0.0
     
     for s in students:
-        details = get_student_fee_details(s, target_month, target_year)
+        details = get_student_fee_details(s, target_month, target_year, payments=fees_map.get(s['id'], []))
         if details['remaining_payable'] > 0:
             defaulters.append({
                 'id': s['id'],

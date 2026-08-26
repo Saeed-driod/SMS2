@@ -457,16 +457,24 @@ def init_db():
         if not s_row:
             conn.execute("INSERT INTO settings (key, value) VALUES (?, ?)", (k, v))
 
-    # Run lightweight schema migrations
+    # Run lightweight schema migrations and performance indices
     try:
         if is_postgres():
             conn.execute("ALTER TABLE students ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active'")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_fees_student_id ON fees(student_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_ac_student_id ON annual_charges_payments(student_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_students_class ON students(class)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_students_campus ON students(campus_id)")
         else:
             cur = conn.cursor()
             cur.execute("PRAGMA table_info(students)")
             cols = [c[1] for c in cur.fetchall()]
             if 'status' not in cols:
                 conn.execute("ALTER TABLE students ADD COLUMN status TEXT DEFAULT 'active'")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_fees_student_id ON fees(student_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_ac_student_id ON annual_charges_payments(student_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_students_class ON students(class)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_students_campus ON students(campus_id)")
     except Exception as e:
         print(f"Migration check warning: {e}")
 
