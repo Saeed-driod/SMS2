@@ -7,6 +7,7 @@ from datetime import datetime
 import pandas as pd
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
+from db import get_db_connection, init_db, is_postgres
 
 app = Flask(__name__)
 app.secret_key = 'alliedian_school_rehman_campus_key_secret_2026'
@@ -29,11 +30,11 @@ SHORT_MONTHS = {
     'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12
 }
 
-def get_db_connection():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
+# Run database table initialization
+try:
+    init_db()
+except Exception as e:
+    print(f"Database initialization note: {e}")
 
 # Helper function to get campus settings
 def get_campus_settings(campus_id):
@@ -73,25 +74,6 @@ def login_required(f):
 def inject_campuses():
     if 'logged_in' in session:
         conn = get_db_connection()
-        
-        # Ensure student_delete_requests table exists
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS student_delete_requests (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                student_id INTEGER NOT NULL,
-                student_name TEXT NOT NULL,
-                student_father_name TEXT,
-                student_class TEXT NOT NULL,
-                student_campus_id INTEGER NOT NULL,
-                requested_by_user TEXT NOT NULL,
-                requested_at TEXT NOT NULL,
-                reason TEXT,
-                status TEXT DEFAULT 'pending',
-                actioned_by_user TEXT,
-                actioned_at TEXT,
-                FOREIGN KEY (student_campus_id) REFERENCES campuses(id)
-            )
-        ''')
         
         if session.get('role') == 'admin':
             campuses = conn.execute("SELECT * FROM campuses ORDER BY id").fetchall()
@@ -1760,8 +1742,8 @@ def campuses_view():
                              (code, code, c_id))
                 conn.commit()
                 flash(f"Campus '{name}' and operator user account '{code}' created successfully!", 'success')
-            except sqlite3.IntegrityError:
-                flash(f"Error: Campus code '{code}' already exists.", 'danger')
+            except Exception as e:
+                flash(f"Error creating campus '{code}': {str(e)}", 'danger')
                 
     campuses = conn.execute('''
         SELECT c.*, COUNT(s.id) as student_count 
@@ -2145,6 +2127,5 @@ def sos_delete(material_id):
     return redirect(url_for('sos_view'))
 
 if __name__ == '__main__':
-    import import_excel
-    import_excel.init_db()
+    init_db()
     app.run(host='0.0.0.0', port=3013, debug=True)
