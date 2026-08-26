@@ -9,7 +9,7 @@
         <p class="text-secondary small mb-0">Total Enrolled: <strong class="text-white">{{ total_students }}</strong> students</p>
     </div>
     <div class="col-md-6 text-md-end mt-3 mt-md-0">
-        <a href="{{ url_for('export_students_excel', class_filter=class_filter, campus_filter=campus_filter, search=search) }}" class="btn btn-outline-success btn-sm px-3 me-2" title="Download Excel Sheet of displayed students">
+        <a href="{{ url_for('export_students_excel', class_filter=class_filter, campus_filter=campus_filter, status_filter=status_filter, search=search) }}" class="btn btn-outline-success btn-sm px-3 me-2" title="Download Excel Sheet of displayed students">
             <i class="fa-solid fa-file-excel me-1"></i> Export Excel
         </a>
         <a href="{{ url_for('students_promotion') }}" class="btn btn-secondary btn-sm px-3 me-2">
@@ -24,18 +24,25 @@
 <!-- Search and Filter Bar -->
 <div class="glass-panel mb-4">
     <form action="{{ url_for('students_view') }}" method="GET" class="row g-3">
-        <div class="col-md-4">
+        <div class="col-md-3">
             <div class="search-wrapper">
                 <i class="fa-solid fa-magnifying-glass"></i>
-                <input type="text" class="form-control" name="search" placeholder="Search by student name or father name..." value="{{ search }}">
+                <input type="text" class="form-control" name="search" placeholder="Search by name, father..." value="{{ search }}">
             </div>
         </div>
-        <div class="col-md-3">
+        <div class="col-md-2">
             <select class="form-select" name="class_filter">
                 <option value="">All Classes</option>
                 {% for c in classes %}
                 <option value="{{ c }}" {% if class_filter == c %}selected{% endif %}>Class {{ c }}</option>
                 {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-2">
+            <select class="form-select" name="status_filter">
+                <option value="">All Statuses</option>
+                <option value="active" {% if status_filter == 'active' %}selected{% endif %}>Active Only</option>
+                <option value="withdrawn" {% if status_filter == 'withdrawn' %}selected{% endif %}>Withdrawn Only</option>
             </select>
         </div>
         
@@ -70,6 +77,7 @@
                     <th>Father Name</th>
                     <th>Contact / Phone</th>
                     <th>Class</th>
+                    <th>Status</th>
                     {% if session.role == 'admin' and not active_campus_id %}
                     <th>Campus</th>
                     {% endif %}
@@ -82,7 +90,7 @@
                 {% if students %}
                     {% for student in students %}
                     {% set is_pending = (student.id in pending_delete_map) %}
-                    <tr class="{% if is_pending %}table-row-pending{% endif %}">
+                    <tr class="{% if is_pending %}table-row-pending{% elif student.status == 'withdrawn' %}opacity-75{% endif %}">
                         <td class="text-secondary font-monospace">{{ student.id }}</td>
                         <td>
                             <div class="d-flex align-items-center flex-wrap gap-1">
@@ -105,6 +113,17 @@
                             {% endif %}
                         </td>
                         <td><span class="badge badge-class">Class {{ student.class }}</span></td>
+                        <td>
+                            {% if student.status == 'withdrawn' %}
+                            <span class="badge bg-danger bg-opacity-25 text-danger border border-danger border-opacity-50" style="font-size: 0.72rem;">
+                                <i class="fa-solid fa-user-slash me-1"></i>Withdrawn
+                            </span>
+                            {% else %}
+                            <span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-50" style="font-size: 0.72rem;">
+                                <i class="fa-solid fa-user-check me-1"></i>Active
+                            </span>
+                            {% endif %}
+                        </td>
                         {% if session.role == 'admin' and not active_campus_id %}
                         <td>
                             <span class="badge bg-dark border border-secondary text-info">
@@ -174,7 +193,7 @@
         </div>
         <ul class="pagination pagination-custom mb-0">
             <li class="page-item {% if page == 1 %}disabled{% endif %}">
-                <a class="page-link" href="{{ url_for('students_view', page=page-1, search=search, class_filter=class_filter, campus_filter=campus_filter) }}">
+                <a class="page-link" href="{{ url_for('students_view', page=page-1, search=search, class_filter=class_filter, campus_filter=campus_filter, status_filter=status_filter) }}">
                     <i class="fa-solid fa-chevron-left"></i>
                 </a>
             </li>
@@ -184,7 +203,7 @@
             
             {% if start_page > 1 %}
                 <li class="page-item">
-                    <a class="page-link" href="{{ url_for('students_view', page=1, search=search, class_filter=class_filter, campus_filter=campus_filter) }}">1</a>
+                    <a class="page-link" href="{{ url_for('students_view', page=1, search=search, class_filter=class_filter, campus_filter=campus_filter, status_filter=status_filter) }}">1</a>
                 </li>
                 {% if start_page > 2 %}
                     <li class="page-item disabled"><span class="page-link">...</span></li>
@@ -193,7 +212,7 @@
             
             {% for p in range(start_page, end_page + 1) %}
                 <li class="page-item {% if p == page %}active{% endif %}">
-                    <a class="page-link" href="{{ url_for('students_view', page=p, search=search, class_filter=class_filter, campus_filter=campus_filter) }}">{{ p }}</a>
+                    <a class="page-link" href="{{ url_for('students_view', page=p, search=search, class_filter=class_filter, campus_filter=campus_filter, status_filter=status_filter) }}">{{ p }}</a>
                 </li>
             {% endfor %}
             
@@ -202,12 +221,12 @@
                     <li class="page-item disabled"><span class="page-link">...</span></li>
                 {% endif %}
                 <li class="page-item">
-                    <a class="page-link" href="{{ url_for('students_view', page=total_pages, search=search, class_filter=class_filter, campus_filter=campus_filter) }}">{{ total_pages }}</a>
+                    <a class="page-link" href="{{ url_for('students_view', page=total_pages, search=search, class_filter=class_filter, campus_filter=campus_filter, status_filter=status_filter) }}">{{ total_pages }}</a>
                 </li>
             {% endif %}
             
             <li class="page-item {% if page == total_pages %}disabled{% endif %}">
-                <a class="page-link" href="{{ url_for('students_view', page=page+1, search=search, class_filter=class_filter, campus_filter=campus_filter) }}">
+                <a class="page-link" href="{{ url_for('students_view', page=page+1, search=search, class_filter=class_filter, campus_filter=campus_filter, status_filter=status_filter) }}">
                     <i class="fa-solid fa-chevron-right"></i>
                 </a>
             </li>

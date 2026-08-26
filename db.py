@@ -203,7 +203,8 @@ def init_db():
                 opening_arrears REAL DEFAULT 0,
                 start_month INTEGER DEFAULT 3,
                 start_year INTEGER DEFAULT 2026,
-                campus_id INTEGER REFERENCES campuses(id)
+                campus_id INTEGER REFERENCES campuses(id),
+                status TEXT DEFAULT 'active'
             );
         ''')
         cur.execute('''
@@ -315,7 +316,8 @@ def init_db():
                 opening_arrears REAL DEFAULT 0,
                 start_month INTEGER DEFAULT 3,
                 start_year INTEGER DEFAULT 2026,
-                campus_id INTEGER REFERENCES campuses(id)
+                campus_id INTEGER REFERENCES campuses(id),
+                status TEXT DEFAULT 'active'
             );
         ''')
         cur.execute('''
@@ -454,6 +456,19 @@ def init_db():
         s_row = conn.execute("SELECT key FROM settings WHERE key = ?", (k,)).fetchone()
         if not s_row:
             conn.execute("INSERT INTO settings (key, value) VALUES (?, ?)", (k, v))
+
+    # Run lightweight schema migrations
+    try:
+        if is_postgres():
+            conn.execute("ALTER TABLE students ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active'")
+        else:
+            cur = conn.cursor()
+            cur.execute("PRAGMA table_info(students)")
+            cols = [c[1] for c in cur.fetchall()]
+            if 'status' not in cols:
+                conn.execute("ALTER TABLE students ADD COLUMN status TEXT DEFAULT 'active'")
+    except Exception as e:
+        print(f"Migration check warning: {e}")
 
     conn.commit()
     conn.close()

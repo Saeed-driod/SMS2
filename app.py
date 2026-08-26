@@ -142,7 +142,9 @@ def get_student_fee_details(student, target_month_name, target_year, months=1):
                     break
                     
         if p_year < target_year or (p_year == target_year and p_month_num < target_month_num):
-            total_paid_prior += p_amount
+            # Only count payments on or after the student's start date
+            if p_year > start_year or (p_year == start_year and p_month_num >= start_month):
+                total_paid_prior += p_amount
         elif p_year == target_year and p_month_num == target_month_num:
             paid_target_month += p_amount
             
@@ -454,6 +456,7 @@ def export_students_excel():
     search = request.args.get('search', '').strip()
     class_filter = request.args.get('class_filter', '').strip()
     campus_filter = request.args.get('campus_filter', type=int)
+    status_filter = request.args.get('status_filter', '').strip()
 
     conn = get_db_connection()
     query = '''
@@ -478,6 +481,10 @@ def export_students_excel():
     if class_filter:
         query += " AND s.class = ?"
         params.append(class_filter)
+
+    if status_filter:
+        query += " AND s.status = ?"
+        params.append(status_filter)
         
     query += " ORDER BY s.class, s.name"
     students = conn.execute(query, params).fetchall()
@@ -621,6 +628,7 @@ def students_view():
     search = request.args.get('search', '').strip()
     class_filter = request.args.get('class_filter', '').strip()
     campus_filter = request.args.get('campus_filter', '', type=int)
+    status_filter = request.args.get('status_filter', '').strip()
     page = request.args.get('page', 1, type=int)
     per_page = 20
     offset = (page - 1) * per_page
@@ -661,6 +669,10 @@ def students_view():
     if class_filter:
         query += " AND s.class = ?"
         params.append(class_filter)
+
+    if status_filter:
+        query += " AND s.status = ?"
+        params.append(status_filter)
         
     count_query = f"SELECT COUNT(*) FROM ({query})"
     total_students = conn.execute(count_query, params).fetchone()[0]
@@ -685,6 +697,7 @@ def students_view():
                            search=search,
                            class_filter=class_filter,
                            campus_filter=campus_filter,
+                           status_filter=status_filter,
                            total_students=total_students,
                            pending_delete_map=pending_delete_map)
 
@@ -703,6 +716,7 @@ def student_add():
         opening_arrears = float(request.form.get('opening_arrears', 0) or 0)
         start_month = int(request.form['start_month'])
         start_year = int(request.form['start_year'])
+        status = request.form.get('status', 'active').strip()
         
         if session.get('role') == 'admin':
             student_campus_id = int(request.form['campus_id'])
@@ -715,9 +729,9 @@ def student_add():
             
         conn = get_db_connection()
         conn.execute('''
-            INSERT INTO students (name, father_name, phone_number, class, monthly_fee, annual_charges, opening_arrears, start_month, start_year, campus_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (name, father_name, phone_number, student_class, monthly_fee, annual_charges, opening_arrears, start_month, start_year, student_campus_id))
+            INSERT INTO students (name, father_name, phone_number, class, monthly_fee, annual_charges, opening_arrears, start_month, start_year, campus_id, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (name, father_name, phone_number, student_class, monthly_fee, annual_charges, opening_arrears, start_month, start_year, student_campus_id, status))
         conn.commit()
         conn.close()
         
@@ -760,6 +774,7 @@ def student_edit(id):
         opening_arrears = float(request.form.get('opening_arrears', 0) or 0)
         start_month = int(request.form['start_month'])
         start_year = int(request.form['start_year'])
+        status = request.form.get('status', 'active').strip()
         
         if session.get('role') == 'admin':
             student_campus_id = int(request.form['campus_id'])
@@ -772,9 +787,9 @@ def student_edit(id):
             
         conn.execute('''
             UPDATE students 
-            SET name = ?, father_name = ?, phone_number = ?, class = ?, monthly_fee = ?, annual_charges = ?, opening_arrears = ?, start_month = ?, start_year = ?, campus_id = ?
+            SET name = ?, father_name = ?, phone_number = ?, class = ?, monthly_fee = ?, annual_charges = ?, opening_arrears = ?, start_month = ?, start_year = ?, campus_id = ?, status = ?
             WHERE id = ?
-        ''', (name, father_name, phone_number, student_class, monthly_fee, annual_charges, opening_arrears, start_month, start_year, student_campus_id, id))
+        ''', (name, father_name, phone_number, student_class, monthly_fee, annual_charges, opening_arrears, start_month, start_year, student_campus_id, status, id))
         conn.commit()
         conn.close()
         
@@ -1487,7 +1502,7 @@ def voucher_print():
         if annual_charges <= 0:
             return 0.0
         paid_rec = conn.execute(
-            "SELECT SUM(paid_amount) FROM annual_charges_payments WHERE student_id = ? AND year = ?",
+            "SELECT SUM(paid_amount) FROM annual_charges_payments WHERE student_id = ? AND year = ? AND (notes IS NULL OR (notes NOT LIKE '%Summer Pack%' AND notes NOT LIKE '%SP%'))",
             (student['id'], yr)
         ).fetchone()
         paid_annual = float(paid_rec[0] or 0.0) if paid_rec and paid_rec[0] is not None else 0.0
@@ -1579,6 +1594,8 @@ def voucher_print():
                 'issue_date': datetime.now().strftime('%d-%m-%Y'),
                 'arrears': display_arrears,
                 'monthly_fee': fee_details['monthly_fee'],
+                'unpaid_annual_charges': unpaid_annual,
+                'annual_charges': unpaid_annual,
                 'other_dues': current_other_dues,
                 'other_dues_desc': auto_other_dues_desc,
                 'payable_by_due': payable_by_due,
@@ -1669,6 +1686,8 @@ def voucher_print():
             'issue_date': datetime.now().strftime('%d-%m-%Y'),
             'arrears': display_arrears,
             'monthly_fee': fee_details['monthly_fee'],
+            'unpaid_annual_charges': unpaid_annual,
+            'annual_charges': unpaid_annual,
             'other_dues': current_other_dues,
             'other_dues_desc': auto_other_dues_desc,
             'payable_by_due': payable_by_due,

@@ -1,354 +1,420 @@
-import sqlite3
-import pandas as pd
-import numpy as np
-import re
 import os
+import re
+import openpyxl
+from db import get_db_connection, is_postgres, init_db
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, 'sms.db')
-EXCEL_PATH = os.path.join(BASE_DIR, 'Fee record 2026.xlsx')
+EXCEL_PATH = os.path.join(BASE_DIR, 'Fee record Main Campus.xlsx')
 
-MONTH_MAP = {
-    'jan': ('January', 1),
-    'feb': ('February', 2),
-    'fe': ('February', 2),
-    'mar': ('March', 3),
-    'apr': ('April', 4),
+MONTH_LOOKUP = {
+    'jan': ('January', 1), 'january': ('January', 1),
+    'feb': ('February', 2), 'fe': ('February', 2), 'february': ('February', 2),
+    'mar': ('March', 3), 'march': ('March', 3),
+    'apr': ('April', 4), 'april': ('April', 4),
     'may': ('May', 5),
-    'jun': ('June', 6),
-    'jul': ('July', 7),
-    'aug': ('August', 8),
-    'sep': ('September', 9),
-    'oct': ('October', 10),
-    'nov': ('November', 11),
-    'dec': ('December', 12)
+    'jun': ('June', 6), 'june': ('June', 6),
+    'jul': ('July', 7), 'july': ('July', 7),
+    'aug': ('August', 8), 'august': ('August', 8),
+    'sep': ('September', 9), 'sept': ('September', 9), 'september': ('September', 9),
+    'oct': ('October', 10), 'october': ('October', 10),
+    'nov': ('November', 11), 'november': ('November', 11),
+    'dec': ('December', 12), 'dece': ('December', 12), 'december': ('December', 12)
 }
 
-def clean_amount(val, default_fee=0):
-    if pd.isna(val) or val == '':
+MONTH_NUM_TAG = {
+    'jan': 1, 'january': 1,
+    'feb': 2, 'fe': 2, 'february': 2,
+    'mar': 3, 'march': 3,
+    'apr': 4, 'april': 4,
+    'may': 5,
+    'jun': 6, 'june': 6,
+    'jul': 7, 'july': 7,
+    'aug': 8, 'august': 8,
+    'sep': 9, 'sept': 9, 'september': 9,
+    'oct': 10, 'october': 10,
+    'nov': 11, 'november': 11,
+    'dec': 12, 'dece': 12, 'december': 12
+}
+
+def derive_start_month_year(arrears_tag, default_start_m=3, default_start_y=2026):
+    if not arrears_tag:
+        return default_start_m, default_start_y
+    tag = str(arrears_tag).lower().strip()
+    
+    # Find matching month
+    matched_m = None
+    for mk, mnum in MONTH_NUM_TAG.items():
+        if mk in tag:
+            matched_m = mnum
+            break
+            
+    if not matched_m:
+        return default_start_m, default_start_y
+        
+    if matched_m == 11:
+        return 12, 2025 # next month is Dec 2025
+    elif matched_m == 12:
+        return 1, 2026 # next month is Jan 2026
+    elif matched_m in (1, 2):
+        return matched_m + 1, 2026
+    elif matched_m >= 3 and matched_m <= 10:
+        return matched_m + 1, 2026
+        
+    return default_start_m, default_start_y
+
+def parse_pending_amount(val):
+    """Extracts pending amount from strings like '2000p', '4500(2000p)', '4000(1000p', '1500(3500p)'"""
+    if val is None:
         return 0
-    if isinstance(val, (int, float)):
-        return int(val)
-    val_str = str(val).strip().lower()
-    if not val_str or val_str == 'nan':
-        return 0
-    if val_str in ('done', 'paid', 'ok', 'yes'):
-        return default_fee
-    # extract first sequence of digits
-    match = re.search(r'\d+', val_str)
-    if match:
-        return int(match.group())
+    s = str(val).strip().lower()
+    m_split = re.search(r'\((\d+)\s*p?\)?', s)
+    if m_split:
+        return int(m_split.group(1))
+    m_p = re.search(r'^(\d+)\s*p$', s)
+    if m_p:
+        return int(m_p.group(1))
     return 0
 
-def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    
-    # Create campuses table
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS campuses (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            code TEXT UNIQUE NOT NULL
-        )
-    ''')
-    
-    # Create students table
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS students (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            father_name TEXT,
-            phone_number TEXT,
-            class TEXT NOT NULL,
-            monthly_fee REAL NOT NULL,
-            annual_charges REAL DEFAULT 0,
-            opening_arrears REAL DEFAULT 0,
-            start_month INTEGER DEFAULT 3,
-            start_year INTEGER DEFAULT 2026,
-            campus_id INTEGER REFERENCES campuses(id)
-        )
-    ''')
-    
-    # Create fees table
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS fees (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            student_id INTEGER NOT NULL,
-            month TEXT NOT NULL,
-            year INTEGER NOT NULL,
-            paid_amount REAL NOT NULL,
-            date_paid TEXT NOT NULL,
-            payment_mode TEXT DEFAULT 'Voucher',
-            reference_no TEXT,
-            notes TEXT,
-            collected_by TEXT,
-            campus_id INTEGER REFERENCES campuses(id),
-            FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE CASCADE
-        )
-    ''')
+def is_month_arrears(val_str):
+    """Checks if value is like '21800july', '60600jul', '4800nov', '15200pending till june'"""
+    val_lower = val_str.lower().strip()
+    m = re.match(r'^(\d+)\s*([a-zA-Z]+.*)$', val_lower)
+    if m:
+        amt = int(m.group(1))
+        suffix = m.group(2).strip().lower()
+        if suffix not in ('p', 'st', 'stat', 'party', 'prty') and any(m_key in suffix for m_key in ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec','clear','pend']):
+            return True, amt, suffix
+    if 'pending till' in val_lower or 'till' in val_lower:
+        m_amt = re.search(r'\d+', val_str)
+        if m_amt:
+            return True, int(m_amt.group()), val_str
+    return False, 0, ''
 
-    # Create annual_charges_payments table
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS annual_charges_payments (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            student_id INTEGER NOT NULL,
-            year INTEGER NOT NULL,
-            paid_amount REAL NOT NULL,
-            date_paid TEXT NOT NULL,
-            payment_mode TEXT DEFAULT 'Voucher',
-            reference_no TEXT,
-            notes TEXT,
-            collected_by TEXT,
-            campus_id INTEGER REFERENCES campuses(id),
-            FOREIGN KEY (student_id) REFERENCES students (id) ON DELETE CASCADE
-        )
-    ''')
-    
-    # Create users table for login
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL,
-            campus_id INTEGER REFERENCES campuses(id),
-            role TEXT DEFAULT 'operator'
-        )
-    ''')
-    
-    # Create settings table
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS settings (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL
-        )
-    ''')
-    
-    # Create sos_materials table
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS sos_materials (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL,
-            description TEXT,
-            class_name TEXT NOT NULL,
-            filename TEXT NOT NULL,
-            filepath TEXT NOT NULL,
-            date_uploaded TEXT NOT NULL
-        )
-    ''')
-    
-    # Create student_delete_requests table
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS student_delete_requests (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            student_id INTEGER NOT NULL,
-            student_name TEXT NOT NULL,
-            student_father_name TEXT,
-            student_class TEXT NOT NULL,
-            student_campus_id INTEGER NOT NULL,
-            requested_by_user TEXT NOT NULL,
-            requested_at TEXT NOT NULL,
-            reason TEXT,
-            status TEXT DEFAULT 'pending',
-            actioned_by_user TEXT,
-            actioned_at TEXT,
-            FOREIGN KEY (student_campus_id) REFERENCES campuses(id)
-        )
-    ''')
-
-    # Create promotion_history table
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS promotion_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            student_id INTEGER NOT NULL,
-            student_name TEXT NOT NULL,
-            from_class TEXT NOT NULL,
-            to_class TEXT NOT NULL,
-            previous_fee REAL NOT NULL,
-            new_fee REAL NOT NULL,
-            new_start_month INTEGER NOT NULL,
-            new_start_year INTEGER NOT NULL,
-            promoted_by_user TEXT NOT NULL,
-            promoted_at TEXT NOT NULL,
-            campus_id INTEGER REFERENCES campuses(id)
-        )
-    ''')
-    
-    # Check if already seeded (by flag or existing settings entries)
-    cursor.execute("SELECT value FROM settings WHERE key = 'db_seeded'")
-    seeded = cursor.fetchone()
-    if seeded and seeded[0] == '1':
-        conn.close()
-        return
+def parse_cell_amount(val, default_fee=0):
+    if val is None or val == '':
+        return 0, ''
+    if isinstance(val, (int, float)):
+        if val == 0:
+            return default_fee, 'Waived (0)'
+        return int(val), ''
+    val_str = str(val).strip()
+    if not val_str or val_str.lower() in ('nan', 'none', '-'):
+        return 0, ''
         
-    cursor.execute("SELECT COUNT(*) FROM campuses")
-    campus_count = cursor.fetchone()[0]
+    val_lower = val_str.lower()
+    
+    if val_lower in ('0', '0.0', 'zero', 'nil', 'free', 'waived'):
+        return default_fee, 'Waived (0)'
+    
+    # Check if month arrears e.g. 21800july
+    is_arr, arr_amt, arr_suffix = is_month_arrears(val_str)
+    if is_arr:
+        return 0, f'arrears:{arr_amt}:{arr_suffix}'
 
-    cursor.execute("SELECT COUNT(*) FROM users")
-    user_count = cursor.fetchone()[0]
+    # Check if 'done' or 'paid' or 'clear'
+    if any(k in val_lower for k in ('done', 'paid', 'clear', 'ok', 'yes')):
+        return default_fee, val_str
 
-    # Only insert sample default campuses if table is completely empty
-    if campus_count == 0:
-        default_campuses = [
-            ('Al-Rehman Campus, Okara', 'campus_1'),
-            ('Main Campus, Lahore', 'campus_2'),
-            ('Model Town Campus, Okara', 'campus_3'),
-            ('Sahiwal Campus', 'campus_4'),
-            ('Faisalabad Campus', 'campus_5'),
-            ('Multan Campus', 'campus_6'),
-            ('Gujranwala Campus', 'campus_7'),
-            ('Sialkot Campus', 'campus_8')
-        ]
-        for name, code in default_campuses:
-            cursor.execute("INSERT OR IGNORE INTO campuses (name, code) VALUES (?, ?)", (name, code))
-            
-    # Insert default admin user if not exists
-    if user_count == 0:
-        cursor.execute("INSERT OR IGNORE INTO users (username, password, role) VALUES (?, ?, ?)", 
-                       ('admin', 'pbkdf2:sha256:600000$admin_salt$cb2422ba14a80696f8a846f5c88b89cfd0b2cb612a4f00dbccbf5be5d3c01c0b', 'admin'))
+    # Pattern like '1500(3500p)' or '4000(4000p)'
+    m_split = re.match(r'(\d+)\s*\(\s*(\d+)\s*p?\s*\)', val_lower)
+    if m_split:
+        paid = int(m_split.group(1))
+        pending = int(m_split.group(2))
+        return paid, f'{pending} pending'
 
-    # Mark as permanently seeded so server restarts never resurrect deleted campuses
-    cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('db_seeded', '1')")
+    # Pattern like '650p' or '2700p' or '5000p'
+    m_p_only = re.match(r'^(\d+)\s*p$', val_lower)
+    if m_p_only:
+        pending = int(m_p_only.group(1))
+        return 0, f'{pending} pending'
 
-    # Insert default settings
-    default_settings = [
-        ('school_name', 'Alliedian School Al-Rehman Campus, Okara'),
-        ('bank_name', 'MCB Bank Ltd (A/C: 1234-5678-9)'),
-        ('due_day', '10'),
-        ('late_fee', '100'),
-        ('db_seeded', '1')
-    ]
-    for key, val in default_settings:
-        cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, val))
+    # Pattern like '1500st' or '1250party'
+    m_num_suffix = re.match(r'^(\d+)\s*([a-zA-Z]+.*)$', val_lower)
+    if m_num_suffix:
+        amt = int(m_num_suffix.group(1))
+        note = m_num_suffix.group(2).strip()
+        return amt, note
+
+    # General extract number
+    m = re.search(r'\d+', val_str)
+    if m:
+        return int(m.group()), val_str
         
-    conn.commit()
-    conn.close()
+    return 0, val_str
 
-def import_data():
+def parse_ac_cell(val, default_ac=2700):
+    if val is None or str(val).strip() == '':
+        return default_ac, 0, 'blank_pending'
+    val_str = str(val).strip()
+    val_lower = val_str.lower()
+    
+    if val_lower in ('none', 'nan', '-'):
+        return default_ac, 0, 'blank_pending'
+    if val_lower in ('0', 'zero', 'nil'):
+        return 0, 0, 'exempt_zero'
+        
+    # Pattern like '5000(3500p)' or '1500(3500p)'
+    m_split = re.match(r'^(\d+)\s*\(\s*(\d+)\s*p?\s*\)', val_lower)
+    if m_split:
+        p1 = int(m_split.group(1))
+        p2 = int(m_split.group(2))
+        if p1 > p2:
+            total_ac = p1
+            paid_ac = p1 - p2
+        else:
+            paid_ac = p1
+            total_ac = p1 + p2
+        return total_ac, paid_ac, f'{p2} pending'
+
+    # Pattern like '2700p' or '1350p' or '5000p'
+    m_p_only = re.match(r'^(\d+)\s*p$', val_lower)
+    if m_p_only:
+        pending = int(m_p_only.group(1))
+        return pending, 0, f'{pending} pending'
+
+    # Number with party like '1250party'
+    m_party = re.match(r'^(\d+)\s*part', val_lower)
+    if m_party:
+        paid = int(m_party.group(1))
+        return paid, paid, 'partial'
+
+    # Pure number like 2700
+    m_num = re.search(r'\d+', val_str)
+    if m_num:
+        amt = int(m_num.group())
+        return amt, amt, 'paid'
+        
+    return default_ac, 0, val_str
+
+def is_row_red(ws, r):
+    for c in range(1, min(6, ws.max_column+1)):
+        cell = ws.cell(r, c)
+        fill = cell.fill
+        if fill and fill.fill_type:
+            fg = fill.fgColor
+            rgb = str(getattr(fg, 'rgb', ''))
+            theme = getattr(fg, 'theme', None)
+            tint = getattr(fg, 'tint', 0.0)
+            if rgb in ('FFFF0000', 'FFC00000', 'FFD99795', 'FFFF6666', 'FFFFC7CE', 'FFFF2020') or (theme == 9 and tint < 0):
+                return True
+    return False
+
+def import_main_campus():
+    init_db()
+    
     if not os.path.exists(EXCEL_PATH):
         print(f"Error: {EXCEL_PATH} not found!")
         return
         
-    print(f"Loading {EXCEL_PATH}...")
-    xls = pd.ExcelFile(EXCEL_PATH)
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
+    print(f"Loading Excel file: {EXCEL_PATH}...")
+    wb = openpyxl.load_workbook(EXCEL_PATH, data_only=True)
     
-    # Clear existing data before import to avoid duplicates
-    cursor.execute("DELETE FROM fees")
-    cursor.execute("DELETE FROM students")
-    cursor.execute("DELETE FROM sqlite_sequence WHERE name IN ('students', 'fees')")
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    # 1. Identify Main Campus ID
+    campus_row = cur.execute("SELECT id, name FROM campuses WHERE code = 'main_campus' OR name LIKE '%Main%' ORDER BY id ASC LIMIT 1").fetchone()
+    if campus_row:
+        campus_id = campus_row['id']
+        campus_name = campus_row['name']
+    else:
+        campus_row = cur.execute("SELECT id, name FROM campuses ORDER BY id ASC LIMIT 1").fetchone()
+        campus_id = campus_row['id'] if campus_row else 1
+        campus_name = campus_row['name'] if campus_row else 'Default Campus'
+        
+    print(f"Importing to Campus: {campus_name} (ID: {campus_id})")
+    
+    # 2. Clear existing records for this campus to prevent duplicates
+    cur.execute("DELETE FROM fees WHERE campus_id = ?", (campus_id,))
+    cur.execute("DELETE FROM annual_charges_payments WHERE campus_id = ?", (campus_id,))
+    cur.execute("DELETE FROM students WHERE campus_id = ?", (campus_id,))
     conn.commit()
+    print("Previous records for this campus cleared successfully.")
     
-    # Get default campus ID (we assign imported students to first campus by default)
-    cursor.execute("SELECT id FROM campuses ORDER BY id ASC LIMIT 1")
-    c_row = cursor.fetchone()
-    default_campus_id = c_row[0] if c_row else 1
+    total_students_imported = 0
+    total_active = 0
+    total_withdrawn = 0
+    total_arrears_students = 0
+    total_arrears_amount = 0
+    total_fee_records = 0
+    total_fee_amount = 0
+    total_ac_records = 0
+    total_ac_amount = 0
     
-    student_count = 0
-    payment_count = 0
-    
-    for sheet in xls.sheet_names:
-        if sheet == 'van Charges':
+    for sheetname in wb.sheetnames:
+        if sheetname == 'van Charges':
             continue
             
-        print(f"Processing sheet: {sheet}...")
-        df = pd.read_excel(xls, sheet, header=None)
-        if len(df) < 3:
-            continue
+        ws = wb[sheetname]
+        headers = []
+        for c in range(1, ws.max_column + 1):
+            v = ws.cell(3, c).value
+            headers.append(str(v).strip() if v is not None else '')
             
-        headers = [str(x).strip() for x in df.iloc[2].tolist()]
-        
-        # Identify columns
-        name_col = 1
-        father_col = 2
-        
-        # Monthly fee columns (columns containing 'month' or 'monthly' and not matching month names)
-        fee_cols = []
-        for i, h in enumerate(headers):
-            hl = h.lower()
-            if ('month' in hl or 'monthly' in hl) and not any(hl.startswith(m) for m in MONTH_MAP):
-                fee_cols.append(i)
+        # Check AC / Annual columns
+        ac_cols = []
+        for c in range(4, min(14, ws.max_column + 1)):
+            h = headers[c-1].lower() if c-1 < len(headers) else ''
+            if h in ('ac', 'sp', 'annual'):
+                ac_cols.append((c, headers[c-1]))
                 
-        # Month payment columns
-        month_cols = []
-        for i, h in enumerate(headers):
-            hl = h.lower()
-            for m_key in MONTH_MAP:
-                if hl.startswith(m_key):
-                    month_cols.append((i, MONTH_MAP[m_key][0], MONTH_MAP[m_key][1]))
-                    break
-                    
-        # Iterate over student rows
-        for r_idx in range(3, len(df)):
-            row = df.iloc[r_idx].tolist()
-            if len(row) <= 1:
+        sheet_students = 0
+        sheet_fees = 0
+        
+        for r in range(4, ws.max_row + 1):
+            name_val = ws.cell(r, 2).value
+            if not name_val or str(name_val).strip().lower() in ('none', 'nan', '', 'student name', 'name', 'sr. #', 'sr#'):
                 continue
                 
-            name = str(row[name_col]).strip() if pd.notna(row[name_col]) else ''
-            if not name or name.lower() == 'nan' or name == 'SR. #' or name.startswith('Name'):
-                continue
-                
-            father = str(row[father_col]).strip() if (father_col < len(row) and pd.notna(row[father_col])) else ''
-            if father.lower() == 'nan':
+            name = str(name_val).strip()
+            father = str(ws.cell(r, 3).value).strip() if ws.cell(r, 3).value else ''
+            if father.lower() in ('none', 'nan'):
                 father = ''
                 
-            # Determine monthly fee for this student
+            status = 'withdrawn' if is_row_red(ws, r) else 'active'
+            if status == 'withdrawn':
+                total_withdrawn += 1
+            else:
+                total_active += 1
+                
+            # Determine monthly fee
             monthly_fee = 0
-            for f_col in fee_cols:
-                if f_col < len(row):
-                    val = row[f_col]
-                    fee_val = clean_amount(val)
-                    if fee_val > 0:
-                        monthly_fee = fee_val
-                        
+            for c in range(4, min(14, ws.max_column + 1)):
+                h = headers[c-1].lower() if c-1 < len(headers) else ''
+                if ('month' in h or 'monthly' in h) and not any(h.startswith(m) for m in MONTH_LOOKUP):
+                    v = ws.cell(r, c).value
+                    amt, _ = parse_cell_amount(v)
+                    if amt > 0:
+                        monthly_fee = amt
             if monthly_fee == 0:
-                # Set a default monthly fee if not found
                 monthly_fee = 2400
                 
-            # Determine start month and year based on earliest recorded payment or default to March 2026
-            start_month = 3
-            start_year = 2026
-            
-            # Find the earliest month column with a payment or a value
-            earliest_payment_found = False
-            for f_idx, m_name, m_val in month_cols:
-                if f_idx < len(row) and pd.notna(row[f_idx]):
-                    val = row[f_idx]
-                    amt = clean_amount(val, monthly_fee)
-                    if amt > 0:
-                        # Determine year of payment
-                        year = 2025 if (m_name in ('November', 'December') and f_idx < 8) else 2026
-                        if not earliest_payment_found or (year < start_year) or (year == start_year and m_val < start_month):
-                            start_month = m_val
-                            start_year = year
-                            earliest_payment_found = True
-                            
-            # Insert student
-            cursor.execute('''
-                INSERT INTO students (name, father_name, class, monthly_fee, start_month, start_year, campus_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (name, father, sheet, monthly_fee, start_month, start_year, default_campus_id))
-            student_id = cursor.lastrowid
-            student_count += 1
-            
-            # Insert payments
-            for f_idx, m_name, m_val in month_cols:
-                if f_idx < len(row) and pd.notna(row[f_idx]):
-                    val = row[f_idx]
-                    amt = clean_amount(val, monthly_fee)
-                    if amt > 0:
-                        year = 2025 if (m_name in ('November', 'December') and f_idx < 8) else 2026
-                        date_paid = f"{year}-{m_val:02d}-01" # Default to first of month
-                        cursor.execute('''
-                            INSERT INTO fees (student_id, month, year, paid_amount, date_paid, campus_id)
-                            VALUES (?, ?, ?, ?, ?, ?)
-                        ''', (student_id, m_name, year, amt, date_paid, default_campus_id))
-                        payment_count += 1
+            # Calculate opening arrears from month-tagged entries (like 21800july or 20700may)
+            student_opening_arrears = 0
+            arrears_tag = None
+            for c in range(4, ws.max_column + 1):
+                v = ws.cell(r, c).value
+                if v is not None:
+                    val_str = str(v).strip()
+                    is_arr, arr_amt, arr_suffix = is_month_arrears(val_str)
+                    if is_arr:
+                        student_opening_arrears += arr_amt
+                        arrears_tag = arr_suffix
                         
+            # Also add pending dues from non-monthly columns (e.g. Book 4500(2000p), Admission 2000p, Sationary 5000p, Sp 500p)
+            for c in range(4, ws.max_column + 1):
+                h = headers[c-1].lower() if c-1 < len(headers) else ''
+                if h in ('month', 'monthly', 'month 26', 'month26', 'monthly 24') or any(h.startswith(m) for m in MONTH_LOOKUP):
+                    continue
+                if h == 'ac':
+                    continue # AC pending is handled directly in annual_charges
+                v = ws.cell(r, c).value
+                p_amt = parse_pending_amount(v)
+                if p_amt > 0:
+                    student_opening_arrears += p_amt
+                        
+            if student_opening_arrears > 0:
+                total_arrears_students += 1
+                total_arrears_amount += student_opening_arrears
+                
+            # Derive start_month & start_year from arrears tag (e.g. 20700may -> billing starts June 2026)
+            start_month, start_year = derive_start_month_year(arrears_tag, default_start_m=3, default_start_y=2026)
+            
+            # Calculate Annual Charges for this student from AC column
+            class_standard_ac = 2600 if sheetname == 'Graduate' else 2700
+            student_annual_charges = 0
+            for ac_col_idx, ac_col_name in ac_cols:
+                if ac_col_name.lower() == 'ac':
+                    v = ws.cell(r, ac_col_idx).value
+                    total_ac, paid_ac, ac_note = parse_ac_cell(v, class_standard_ac)
+                    student_annual_charges = total_ac
+                    
+            # Insert Student
+            if is_postgres():
+                cur.execute('''
+                    INSERT INTO students (name, father_name, class, monthly_fee, annual_charges, opening_arrears, start_month, start_year, campus_id, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    RETURNING id
+                ''', (name, father, sheetname, monthly_fee, student_annual_charges, student_opening_arrears, start_month, start_year, campus_id, status))
+                student_id = cur.fetchone()[0]
+            else:
+                cur.execute('''
+                    INSERT INTO students (name, father_name, class, monthly_fee, annual_charges, opening_arrears, start_month, start_year, campus_id, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (name, father, sheetname, monthly_fee, student_annual_charges, student_opening_arrears, start_month, start_year, campus_id, status))
+                student_id = cur.lastrowid
+                
+            total_students_imported += 1
+            sheet_students += 1
+            
+            # Insert Annual Charges Payments (AC / Sp)
+            for ac_col_idx, ac_col_name in ac_cols:
+                v = ws.cell(r, ac_col_idx).value
+                if v is not None:
+                    if ac_col_name.lower() == 'ac':
+                        total_ac, paid_ac, ac_note = parse_ac_cell(v, class_standard_ac)
+                        if paid_ac > 0:
+                            date_paid = "2026-03-01"
+                            cur.execute('''
+                                INSERT INTO annual_charges_payments (student_id, year, paid_amount, date_paid, campus_id, notes)
+                                VALUES (?, ?, ?, ?, ?, ?)
+                            ''', (student_id, 2026, paid_ac, date_paid, campus_id, f"Annual Charges: {ac_note}"))
+                            total_ac_records += 1
+                            total_ac_amount += paid_ac
+                    else:
+                        # Sp (Summer Pack)
+                        amt, note = parse_cell_amount(v)
+                        if amt > 0:
+                            date_paid = "2026-06-01"
+                            cur.execute('''
+                                INSERT INTO annual_charges_payments (student_id, year, paid_amount, date_paid, campus_id, notes)
+                                VALUES (?, ?, ?, ?, ?, ?)
+                            ''', (student_id, 2026, amt, date_paid, campus_id, f"{ac_col_name}: {note}" if note else f"{ac_col_name} Payment"))
+                            total_ac_records += 1
+                            total_ac_amount += amt
+                        
+            # Insert Monthly Fee Payments
+            for c in range(4, ws.max_column + 1):
+                h = headers[c-1].lower() if c-1 < len(headers) else ''
+                m_matched = None
+                for mk, (mname, mnum) in MONTH_LOOKUP.items():
+                    if h.startswith(mk):
+                        m_matched = (mname, mnum)
+                        break
+                        
+                if m_matched:
+                    mname, mnum = m_matched
+                    v = ws.cell(r, c).value
+                    if v is not None and str(v).strip() != '':
+                        paid, note = parse_cell_amount(v, monthly_fee)
+                        if paid > 0:
+                            # 2025 for earlier Nov/Dec columns before 'Month 26'
+                            year = 2025 if (mname in ('November', 'December') and c < 8) else 2026
+                            date_paid = f"{year}-{mnum:02d}-01"
+                            cur.execute('''
+                                INSERT INTO fees (student_id, month, year, paid_amount, date_paid, campus_id, notes)
+                                VALUES (?, ?, ?, ?, ?, ?, ?)
+                            ''', (student_id, mname, year, paid, date_paid, campus_id, note if note else 'Imported from Excel'))
+                            total_fee_records += 1
+                            total_fee_amount += paid
+                            sheet_fees += 1
+
+        print(f"  Processed Sheet '{sheetname}': {sheet_students} students, {sheet_fees} fee records.")
+        conn.commit()
+        
     conn.commit()
     conn.close()
-    print(f"Import complete! Imported {student_count} students and {payment_count} payments.")
+    
+    print("\n========================================================")
+    print("         MAIN CAMPUS IMPORT COMPLETED SUCCESSFULLY!      ")
+    print("========================================================")
+    print(f"Total Students Imported: {total_students_imported}")
+    print(f"   Active Students: {total_active}")
+    print(f"   Withdrawn (Red) Students: {total_withdrawn}")
+    print(f"Students with Opening Arrears: {total_arrears_students} (Total: Rs. {total_arrears_amount:,})")
+    print(f"Total Monthly Fee Transactions: {total_fee_records} (Total: Rs. {total_fee_amount:,})")
+    print(f"Total Annual / AC Charges: {total_ac_records} (Total: Rs. {total_ac_amount:,})")
+    print("========================================================\n")
 
 if __name__ == '__main__':
-    init_db()
+    import_main_campus()

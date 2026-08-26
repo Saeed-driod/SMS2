@@ -81,6 +81,16 @@
                         <div class="form-text text-secondary small">Any previous outstanding dues at the time of admission. Leave 0 if none.</div>
                     </div>
 
+                    <!-- Student Status -->
+                    <div class="col-md-6">
+                        <label for="status" class="form-label">Student Status <span class="text-danger">*</span></label>
+                        <select class="form-select" id="status" name="status" required>
+                            <option value="active" {% if student.status == 'active' or not student.status %}selected{% endif %}>Active (Currently Enrolled)</option>
+                            <option value="withdrawn" {% if student.status == 'withdrawn' %}selected{% endif %}>Withdrawn (Left School / Struck Off)</option>
+                        </select>
+                        <div class="form-text text-secondary small">Easily switch between Active and Withdrawn anytime.</div>
+                    </div>
+
                     <!-- Campus Dropdown (Admins only) -->
                     {% if session.role == 'admin' %}
                     <div class="col-md-12">

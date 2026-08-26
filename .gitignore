@@ -12,6 +12,8 @@ __pycache__/
 # Temporary and upload files
 uploads/*
 !uploads/.gitkeep
+~$*.xlsx
+*.tmp
 
 # IDE and Editor files
 .vscode/

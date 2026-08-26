@@ -241,9 +241,15 @@
         <td>{{ data.student.class }}</td>
     </tr>
     <tr>
-        <td>{{ data.other_dues_desc }}</td>
-        <td>{% if data.other_dues > 0 %}{{ "{:.0f}".format(data.other_dues) }}{% endif %}</td>
+        <td>Annual Charges:</td>
+        <td>{{ "{:.0f}".format(data.unpaid_annual_charges if data.unpaid_annual_charges is defined else (data.annual_charges or 0)) }}</td>
     </tr>
+    {% if data.other_dues > 0 and data.other_dues_desc and 'annual' not in data.other_dues_desc.lower() %}
+    <tr>
+        <td>{{ data.other_dues_desc }}:</td>
+        <td>{{ "{:.0f}".format(data.other_dues) }}</td>
+    </tr>
+    {% endif %}
     <tr>
         <td>Arrears:</td>
         <td>{{ "{:.0f}".format(data.arrears) }}</td>
