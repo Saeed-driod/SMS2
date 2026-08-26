@@ -258,8 +258,9 @@ def import_main_campus():
             if h in ('ac', 'sp', 'annual'):
                 ac_cols.append((c, headers[c-1]))
                 
-        sheet_students = 0
-        sheet_fees = 0
+        sheet_students_data = []
+        sheet_ac_data = []
+        sheet_fee_data = []
         
         for r in range(4, ws.max_row + 1):
             name_val = ws.cell(r, 2).value
@@ -329,25 +330,14 @@ def import_main_campus():
                     total_ac, paid_ac, ac_note = parse_ac_cell(v, class_standard_ac)
                     student_annual_charges = total_ac
                     
-            # Insert Student
-            if is_postgres():
-                cur.execute('''
-                    INSERT INTO students (name, father_name, class, monthly_fee, annual_charges, opening_arrears, start_month, start_year, campus_id, status)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    RETURNING id
-                ''', (name, father, sheetname, monthly_fee, student_annual_charges, student_opening_arrears, start_month, start_year, campus_id, status))
-                student_id = cur.fetchone()[0]
-            else:
-                cur.execute('''
-                    INSERT INTO students (name, father_name, class, monthly_fee, annual_charges, opening_arrears, start_month, start_year, campus_id, status)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (name, father, sheetname, monthly_fee, student_annual_charges, student_opening_arrears, start_month, start_year, campus_id, status))
-                student_id = cur.lastrowid
-                
+            student_idx = len(sheet_students_data)
+            sheet_students_data.append((
+                name, father, sheetname, monthly_fee, student_annual_charges,
+                student_opening_arrears, start_month, start_year, campus_id, status
+            ))
             total_students_imported += 1
-            sheet_students += 1
             
-            # Insert Annual Charges Payments (AC / Sp)
+            # Collect Annual Charges Payments (AC / Sp)
             for ac_col_idx, ac_col_name in ac_cols:
                 v = ws.cell(r, ac_col_idx).value
                 if v is not None:
@@ -355,10 +345,8 @@ def import_main_campus():
                         total_ac, paid_ac, ac_note = parse_ac_cell(v, class_standard_ac)
                         if paid_ac > 0:
                             date_paid = "2026-03-01"
-                            cur.execute('''
-                                INSERT INTO annual_charges_payments (student_id, year, paid_amount, date_paid, campus_id, notes)
-                                VALUES (?, ?, ?, ?, ?, ?)
-                            ''', (student_id, 2026, paid_ac, date_paid, campus_id, f"Annual Charges: {ac_note}"))
+                            note_text = f"Annual Charges: {ac_note}"
+                            sheet_ac_data.append((student_idx, paid_ac, date_paid, campus_id, note_text))
                             total_ac_records += 1
                             total_ac_amount += paid_ac
                     else:
@@ -366,14 +354,12 @@ def import_main_campus():
                         amt, note = parse_cell_amount(v)
                         if amt > 0:
                             date_paid = "2026-06-01"
-                            cur.execute('''
-                                INSERT INTO annual_charges_payments (student_id, year, paid_amount, date_paid, campus_id, notes)
-                                VALUES (?, ?, ?, ?, ?, ?)
-                            ''', (student_id, 2026, amt, date_paid, campus_id, f"{ac_col_name}: {note}" if note else f"{ac_col_name} Payment"))
+                            note_text = f"{ac_col_name}: {note}" if note else f"{ac_col_name} Payment"
+                            sheet_ac_data.append((student_idx, amt, date_paid, campus_id, note_text))
                             total_ac_records += 1
                             total_ac_amount += amt
                         
-            # Insert Monthly Fee Payments
+            # Collect Monthly Fee Payments
             for c in range(4, ws.max_column + 1):
                 h = headers[c-1].lower() if c-1 < len(headers) else ''
                 m_matched = None
@@ -388,18 +374,77 @@ def import_main_campus():
                     if v is not None and str(v).strip() != '':
                         paid, note = parse_cell_amount(v, monthly_fee)
                         if paid > 0:
-                            # 2025 for earlier Nov/Dec columns before 'Month 26'
                             year = 2025 if (mname in ('November', 'December') and c < 8) else 2026
                             date_paid = f"{year}-{mnum:02d}-01"
-                            cur.execute('''
-                                INSERT INTO fees (student_id, month, year, paid_amount, date_paid, campus_id, notes)
-                                VALUES (?, ?, ?, ?, ?, ?, ?)
-                            ''', (student_id, mname, year, paid, date_paid, campus_id, note if note else 'Imported from Excel'))
+                            note_text = note if note else 'Imported from Excel'
+                            sheet_fee_data.append((student_idx, mname, year, paid, date_paid, campus_id, note_text))
                             total_fee_records += 1
                             total_fee_amount += paid
-                            sheet_fees += 1
 
-        print(f"  Processed Sheet '{sheetname}': {sheet_students} students, {sheet_fees} fee records.")
+        # Fast Batch Insert for this sheet
+        if is_postgres():
+            from psycopg2.extras import execute_values
+            raw_conn = conn._conn
+            raw_cur = raw_conn.cursor()
+            
+            if sheet_students_data:
+                res = execute_values(
+                    raw_cur,
+                    """INSERT INTO students (name, father_name, class, monthly_fee, annual_charges, opening_arrears, start_month, start_year, campus_id, status)
+                       VALUES %s RETURNING id""",
+                    sheet_students_data,
+                    fetch=True
+                )
+                student_ids = [r[0] for r in res]
+                
+                if sheet_ac_data:
+                    ac_to_insert = [
+                        (student_ids[item[0]], 2026, item[1], item[2], item[3], item[4])
+                        for item in sheet_ac_data
+                    ]
+                    execute_values(
+                        raw_cur,
+                        """INSERT INTO annual_charges_payments (student_id, year, paid_amount, date_paid, campus_id, notes)
+                           VALUES %s""",
+                        ac_to_insert
+                    )
+                    
+                if sheet_fee_data:
+                    fees_to_insert = [
+                        (student_ids[item[0]], item[1], item[2], item[3], item[4], item[5], item[6])
+                        for item in sheet_fee_data
+                    ]
+                    execute_values(
+                        raw_cur,
+                        """INSERT INTO fees (student_id, month, year, paid_amount, date_paid, campus_id, notes)
+                           VALUES %s""",
+                        fees_to_insert
+                    )
+            raw_conn.commit()
+        else:
+            # SQLite insertion
+            student_ids = []
+            for s_row in sheet_students_data:
+                cur.execute('''
+                    INSERT INTO students (name, father_name, class, monthly_fee, annual_charges, opening_arrears, start_month, start_year, campus_id, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', s_row)
+                student_ids.append(cur.lastrowid)
+                
+            for item in sheet_ac_data:
+                cur.execute('''
+                    INSERT INTO annual_charges_payments (student_id, year, paid_amount, date_paid, campus_id, notes)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', (student_ids[item[0]], 2026, item[1], item[2], item[3], item[4]))
+                
+            for item in sheet_fee_data:
+                cur.execute('''
+                    INSERT INTO fees (student_id, month, year, paid_amount, date_paid, campus_id, notes)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (student_ids[item[0]], item[1], item[2], item[3], item[4], item[5], item[6]))
+            conn.commit()
+
+        print(f"  Processed Sheet '{sheetname}': {len(sheet_students_data)} students, {len(sheet_fee_data)} fee records.")
         conn.commit()
         
     conn.commit()
