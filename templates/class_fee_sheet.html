@@ -279,7 +279,7 @@
                             <div class="d-flex justify-content-center gap-1">
                                 <button type="button" 
                                         class="btn btn-sm {% if row.remaining <= 0 %}btn-outline-success{% else %}btn-primary{% endif %} px-2 py-1 d-inline-flex align-items-center gap-1"
-                                        onclick="openQuickCollectModal({{ row.id }}, '{{ row.name|replace("'", "\\'") }}', '{{ row.father_name|replace("'", "\\'") }}', '{{ row.class }}', {{ row.total_payable }}, {{ row.paid }}, {{ row.remaining }}, {{ row.monthly_fee }})"
+                                        onclick="openQuickCollectModal({{ row.id }}, '{{ row.name|replace("'", "\\'") }}', '{{ row.father_name|replace("'", "\\'") }}', '{{ row.class }}', {{ row.total_payable }}, {{ row.paid }}, {{ row.remaining }}, {{ row.monthly_fee }}, {{ row.annual_charges or 0 }})"
                                         title="{% if row.remaining <= 0 %}Update Payment{% else %}Collect Fee Record{% endif %}">
                                     <i class="fa-solid fa-receipt"></i>
                                     <span>{% if row.remaining <= 0 %}Edit{% else %}Collect{% endif %}</span>
@@ -317,13 +317,13 @@
     </div>
 </div>
 
-<!-- Quick Fee Collection Modal -->
+<!-- Quick Fee Collection Modal (Supports Tuition, Annual Charges, Books, Admission & Other Fees) -->
 <div class="modal fade" id="quickCollectModal" tabindex="-1" aria-labelledby="quickCollectModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content modal-custom">
             <div class="modal-header border-bottom border-secondary border-opacity-25 pb-3">
                 <h5 class="modal-title text-white d-flex align-items-center gap-2" id="quickCollectModalLabel">
-                    <i class="fa-solid fa-receipt text-success"></i> Instant Fee Collection
+                    <i class="fa-solid fa-cash-register text-success"></i> Instant Fee & Payment Collection
                 </h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
@@ -363,18 +363,92 @@
                         </div>
                     </div>
 
-                    <!-- Dues & Paid Amount Row -->
-                    <div class="mb-3">
+                    <!-- 1. Monthly Tuition Fee Row -->
+                    <div class="mb-3 p-3 rounded" style="background: rgba(16, 185, 129, 0.04); border: 1px solid rgba(16, 185, 129, 0.2);">
                         <div class="d-flex justify-content-between align-items-center mb-1">
-                            <label for="modal_paid_amount" class="form-label mb-0">Paid Amount (Rs.) <span class="text-danger">*</span></label>
-                            <span class="text-secondary small">Total Payable: <strong class="text-white" id="modal_total_payable">Rs. 0</strong></span>
+                            <label for="modal_paid_amount" class="form-label mb-0 fw-bold text-success">
+                                <i class="fa-solid fa-calendar-check me-1"></i> Monthly Tuition Fee (Rs.)
+                            </label>
+                            <span class="text-secondary small">Payable Dues: <strong class="text-white" id="modal_total_payable">Rs. 0</strong></span>
                         </div>
-                        <div class="input-group">
+                        <div class="input-group input-group-sm">
                             <span class="input-group-text bg-transparent border-secondary text-secondary">Rs.</span>
-                            <input type="number" step="any" min="0" class="form-control font-monospace fw-bold fs-5 text-success" id="modal_paid_amount" name="paid_amount" required>
-                            <button type="button" class="btn btn-outline-info btn-sm" onclick="setFullPayableAmount()" title="Fill Total Payable Amount">
+                            <input type="number" step="any" min="0" class="form-control font-monospace fw-bold text-success fs-6" id="modal_paid_amount" name="paid_amount" oninput="calcModalGrandTotal()">
+                            <button type="button" class="btn btn-outline-success btn-sm" onclick="setFullPayableAmount()" title="Fill Total Payable Amount">
                                 Full Paid
                             </button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="clearTuitionAmount()" title="Clear Tuition">
+                                0
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 2. Additional Collections (Annual, Books, Admission, Other) -->
+                    <div class="p-3 mb-3 rounded" style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--glass-border);">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="text-white fw-bold small">
+                                <i class="fa-solid fa-plus-circle text-info me-1"></i> Additional Charges / Add-on Payments (Optional)
+                            </span>
+                            <span class="text-secondary small">Select or enter any extra charges to collect</span>
+                        </div>
+                        
+                        <div class="row g-2">
+                            <!-- Annual Charges -->
+                            <div class="col-md-6">
+                                <label class="form-label text-warning small fw-bold mb-1">
+                                    <i class="fa-solid fa-shield me-1"></i> Annual Charges (سالانہ فنڈ)
+                                </label>
+                                <div class="input-group input-group-sm">
+                                    <span class="input-group-text bg-transparent border-secondary text-secondary">Rs.</span>
+                                    <input type="number" step="any" min="0" class="form-control font-monospace" id="modal_annual_amount" name="annual_amount" placeholder="0" value="0" oninput="calcModalGrandTotal()">
+                                    <button type="button" class="btn btn-outline-warning btn-sm" id="modal_btn_annual" onclick="fillStudentAnnual()">Set</button>
+                                </div>
+                            </div>
+
+                            <!-- Books / Syllabus -->
+                            <div class="col-md-6">
+                                <label class="form-label text-info small fw-bold mb-1">
+                                    <i class="fa-solid fa-book me-1"></i> Books / Syllabus (کتابیں)
+                                </label>
+                                <div class="input-group input-group-sm">
+                                    <span class="input-group-text bg-transparent border-secondary text-secondary">Rs.</span>
+                                    <input type="number" step="any" min="0" class="form-control font-monospace" id="modal_books_amount" name="books_amount" placeholder="0" value="0" oninput="calcModalGrandTotal()">
+                                </div>
+                            </div>
+
+                            <!-- Admission Fee -->
+                            <div class="col-md-6 mt-2">
+                                <label class="form-label text-primary small fw-bold mb-1">
+                                    <i class="fa-solid fa-id-card me-1"></i> Admission Fee (داخلہ فیس)
+                                </label>
+                                <div class="input-group input-group-sm">
+                                    <span class="input-group-text bg-transparent border-secondary text-secondary">Rs.</span>
+                                    <input type="number" step="any" min="0" class="form-control font-monospace" id="modal_admission_amount" name="admission_amount" placeholder="0" value="0" oninput="calcModalGrandTotal()">
+                                </div>
+                            </div>
+
+                            <!-- Other Custom Charge -->
+                            <div class="col-md-6 mt-2">
+                                <label class="form-label text-light small fw-bold mb-1">
+                                    <i class="fa-solid fa-tag me-1"></i> Other / Uniform / Paper Fund (دیگر)
+                                </label>
+                                <div class="input-group input-group-sm">
+                                    <input type="text" class="form-control" style="width: 45%;" id="modal_other_title" name="other_title" placeholder="Title (e.g. Uniform)">
+                                    <span class="input-group-text bg-transparent border-secondary text-secondary">Rs.</span>
+                                    <input type="number" step="any" min="0" class="form-control font-monospace" id="modal_other_amount" name="other_amount" placeholder="0" value="0" oninput="calcModalGrandTotal()">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Live Total Summary Banner -->
+                    <div class="p-3 mb-3 rounded bg-success bg-opacity-10 border border-success border-opacity-25 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                        <div>
+                            <span class="text-white small fw-bold d-block">Grand Total Collection Amount:</span>
+                            <span class="text-secondary small" id="modal_summary_breakdown">Tuition fee only</span>
+                        </div>
+                        <div class="text-end">
+                            <span class="fs-4 fw-bold text-success font-monospace" id="modal_grand_total_display">Rs. 0</span>
                         </div>
                     </div>
 
@@ -420,7 +494,7 @@
                 <div class="modal-footer border-top border-secondary border-opacity-25 pt-2">
                     <button type="button" class="btn btn-secondary btn-sm px-3" data-bs-dismiss="modal">Cancel</button>
                     <button type="submit" class="btn btn-success btn-sm px-4 fw-bold">
-                        <i class="fa-solid fa-check me-1"></i> Save Fee Transaction
+                        <i class="fa-solid fa-check me-1"></i> Save Fee Transaction (<span id="modal_btn_total">Rs. 0</span>)
                     </button>
                 </div>
             </form>
@@ -431,6 +505,7 @@
 <!-- Interactive Client-side Scripting -->
 <script>
 let currentModalPayable = 0;
+let currentModalAnnual = 0;
 let quickCollectModalObj = null;
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -442,18 +517,33 @@ function selectClass(className) {
     document.getElementById('classFilterForm').submit();
 }
 
-function openQuickCollectModal(id, name, father, className, payable, paid, remaining, monthly) {
+function openQuickCollectModal(id, name, father, className, payable, paid, remaining, monthly, annualCharges) {
     document.getElementById('modal_student_id').value = id;
     document.getElementById('modal_student_name').textContent = name + ' (ID: ' + id + ')';
     document.getElementById('modal_father_name').textContent = 'Father: ' + (father || 'N/A');
     document.getElementById('modal_class_badge').textContent = 'Class: ' + className;
     
     currentModalPayable = payable;
+    currentModalAnnual = annualCharges || 0;
     document.getElementById('modal_total_payable').textContent = 'Rs. ' + payable.toLocaleString();
     
     // Default the paid amount input to remaining balance if > 0, else total payable
     let amountToFill = (remaining > 0) ? (paid > 0 ? (paid + remaining) : remaining) : (paid > 0 ? paid : payable);
     document.getElementById('modal_paid_amount').value = amountToFill;
+    
+    // Reset additional charge inputs
+    document.getElementById('modal_annual_amount').value = 0;
+    document.getElementById('modal_books_amount').value = 0;
+    document.getElementById('modal_admission_amount').value = 0;
+    document.getElementById('modal_other_amount').value = 0;
+    document.getElementById('modal_other_title').value = '';
+    
+    const btnAnnual = document.getElementById('modal_btn_annual');
+    if (btnAnnual) {
+        btnAnnual.textContent = currentModalAnnual > 0 ? ('Rs. ' + currentModalAnnual) : 'Set';
+    }
+    
+    calcModalGrandTotal();
     
     if (quickCollectModalObj) {
         quickCollectModalObj.show();
@@ -467,6 +557,42 @@ function openQuickCollectModal(id, name, father, className, payable, paid, remai
 
 function setFullPayableAmount() {
     document.getElementById('modal_paid_amount').value = currentModalPayable;
+    calcModalGrandTotal();
+}
+
+function clearTuitionAmount() {
+    document.getElementById('modal_paid_amount').value = 0;
+    calcModalGrandTotal();
+}
+
+function fillStudentAnnual() {
+    document.getElementById('modal_annual_amount').value = currentModalAnnual > 0 ? currentModalAnnual : 1000;
+    calcModalGrandTotal();
+}
+
+function calcModalGrandTotal() {
+    const tuition = parseFloat(document.getElementById('modal_paid_amount').value) || 0;
+    const annual = parseFloat(document.getElementById('modal_annual_amount').value) || 0;
+    const books = parseFloat(document.getElementById('modal_books_amount').value) || 0;
+    const admission = parseFloat(document.getElementById('modal_admission_amount').value) || 0;
+    const other = parseFloat(document.getElementById('modal_other_amount').value) || 0;
+    
+    const grandTotal = tuition + annual + books + admission + other;
+    
+    document.getElementById('modal_grand_total_display').textContent = 'Rs. ' + grandTotal.toLocaleString();
+    document.getElementById('modal_btn_total').textContent = 'Rs. ' + grandTotal.toLocaleString();
+    
+    let parts = [];
+    if (tuition > 0) parts.push('Tuition: Rs. ' + tuition.toLocaleString());
+    if (annual > 0) parts.push('Annual: Rs. ' + annual.toLocaleString());
+    if (books > 0) parts.push('Books: Rs. ' + books.toLocaleString());
+    if (admission > 0) parts.push('Admission: Rs. ' + admission.toLocaleString());
+    if (other > 0) {
+        const title = document.getElementById('modal_other_title').value.trim() || 'Other';
+        parts.push(title + ': Rs. ' + other.toLocaleString());
+    }
+    
+    document.getElementById('modal_summary_breakdown').textContent = parts.length > 0 ? parts.join(' + ') : 'No amount entered';
 }
 
 // Live client-side instant filtering across the table (Supports Name, Father, ID & Barcode)

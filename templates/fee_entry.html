@@ -143,6 +143,47 @@
                     </div>
                 </div>
 
+                <!-- Additional Charges Section (Annual, Books, Admission, Other) -->
+                <div class="mb-3 p-3 rounded" id="entry_additional_charges_section" style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--glass-border);">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="text-white fw-bold small">
+                            <i class="fa-solid fa-plus-circle text-info me-1"></i> Additional Collections / Add-ons (Optional)
+                        </span>
+                        <span class="text-secondary small">Add annual, books or other fees to this payment</span>
+                    </div>
+                    <div class="row g-2">
+                        <div class="col-md-6">
+                            <label class="form-label text-warning small fw-bold mb-1"><i class="fa-solid fa-shield me-1"></i> Annual Charges</label>
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text bg-transparent border-secondary text-secondary">Rs.</span>
+                                <input type="number" step="any" min="0" class="form-control font-monospace" name="annual_amount" id="entry_annual_amount" placeholder="0" value="0">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label text-info small fw-bold mb-1"><i class="fa-solid fa-book me-1"></i> Books / Syllabus</label>
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text bg-transparent border-secondary text-secondary">Rs.</span>
+                                <input type="number" step="any" min="0" class="form-control font-monospace" name="books_amount" id="entry_books_amount" placeholder="0" value="0">
+                            </div>
+                        </div>
+                        <div class="col-md-6 mt-2">
+                            <label class="form-label text-primary small fw-bold mb-1"><i class="fa-solid fa-id-card me-1"></i> Admission Fee</label>
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text bg-transparent border-secondary text-secondary">Rs.</span>
+                                <input type="number" step="any" min="0" class="form-control font-monospace" name="admission_amount" id="entry_admission_amount" placeholder="0" value="0">
+                            </div>
+                        </div>
+                        <div class="col-md-6 mt-2">
+                            <label class="form-label text-light small fw-bold mb-1"><i class="fa-solid fa-tag me-1"></i> Other / Uniform</label>
+                            <div class="input-group input-group-sm">
+                                <input type="text" class="form-control" style="width: 45%;" name="other_title" placeholder="Title">
+                                <span class="input-group-text bg-transparent border-secondary text-secondary">Rs.</span>
+                                <input type="number" step="any" min="0" class="form-control font-monospace" name="other_amount" id="entry_other_amount" placeholder="0" value="0">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Payment Method / Mode Selector -->
                 <div class="mb-3">
                     <label class="form-label">Payment Method / Mode <span class="text-danger">*</span></label>
@@ -443,6 +484,8 @@
         document.getElementById('monthly_fee_options').style.display = isMonthly ? '' : 'none';
         document.getElementById('annual_fee_options').style.display = isAnnual ? '' : 'none';
         document.getElementById('custom_charge_options').style.display = isOther ? '' : 'none';
+        const addSection = document.getElementById('entry_additional_charges_section');
+        if (addSection) addSection.style.display = isMonthly ? '' : 'none';
         
         const quickBtns = document.getElementById('quick_month_btns');
         if (quickBtns) {
