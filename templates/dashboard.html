@@ -138,29 +138,30 @@
     <!-- Class breakdown & Attendance Column -->
     <div class="d-flex flex-column gap-4">
         <!-- Mock Student Attendance Summary (Matches layout in the image) -->
+        <!-- Mock Student Attendance Summary (Matches layout in the image) -->
         <div class="glass-panel">
-            <h5 class="mb-3 text-white"><i class="fa-solid fa-users-rectangle text-success me-2"></i>Student Attendance Status</h5>
+            <h5 class="mb-3 text-dark fw-bold"><i class="fa-solid fa-users-rectangle text-success me-2"></i>Student Attendance Status</h5>
             <div class="row g-2">
                 <div class="col-6">
-                    <div class="p-3 text-center rounded border border-success border-opacity-10" style="background: rgba(16, 185, 129, 0.04);">
+                    <div class="p-3 text-center rounded border border-success border-opacity-25" style="background: rgba(16, 185, 129, 0.06);">
                         <h4 class="mb-1 text-success font-weight-bold">94.8%</h4>
                         <span class="text-secondary small font-weight-bold text-uppercase">Present today</span>
                     </div>
                 </div>
                 <div class="col-6">
-                    <div class="p-3 text-center rounded border border-danger border-opacity-10" style="background: rgba(239, 68, 68, 0.04);">
+                    <div class="p-3 text-center rounded border border-danger border-opacity-25" style="background: rgba(239, 68, 68, 0.06);">
                         <h4 class="mb-1 text-danger font-weight-bold">3.2%</h4>
                         <span class="text-secondary small font-weight-bold text-uppercase">Absent today</span>
                     </div>
                 </div>
                 <div class="col-6">
-                    <div class="p-3 text-center rounded border border-warning border-opacity-10" style="background: rgba(245, 158, 11, 0.04);">
+                    <div class="p-3 text-center rounded border border-warning border-opacity-25" style="background: rgba(245, 158, 11, 0.06);">
                         <h4 class="mb-1 text-warning font-weight-bold">1.5%</h4>
                         <span class="text-secondary small font-weight-bold text-uppercase">Late arrival</span>
                     </div>
                 </div>
                 <div class="col-6">
-                    <div class="p-3 text-center rounded border border-info border-opacity-10" style="background: rgba(6, 182, 212, 0.04);">
+                    <div class="p-3 text-center rounded border border-info border-opacity-25" style="background: rgba(6, 182, 212, 0.06);">
                         <h4 class="mb-1 text-info font-weight-bold">0.5%</h4>
                         <span class="text-secondary small font-weight-bold text-uppercase">On Leave</span>
                     </div>
@@ -170,15 +171,15 @@
 
         <!-- Class Breakdown list -->
         <div class="glass-panel">
-            <h5 class="mb-3 text-white"><i class="fa-solid fa-chalkboard-user text-purple me-2"></i>Class Strength Registry</h5>
+            <h5 class="mb-3 text-dark fw-bold"><i class="fa-solid fa-chalkboard-user text-purple me-2"></i>Class Strength Registry</h5>
             <div style="max-height: 180px; overflow-y: auto;">
                 <ul class="list-group list-group-flush" style="background: transparent;">
                     {% for c in class_breakdown %}
-                    <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2" style="background: transparent; border-bottom: 1px solid rgba(255,255,255,0.05); color: var(--text-primary); font-size: 0.88rem;">
-                        <div>
-                            <i class="fa-solid fa-chalkboard text-secondary me-2 small"></i> Class {{ c.class }}
+                    <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-2" style="background: transparent; border-bottom: 1px solid #eef5fb; color: var(--text-primary); font-size: 0.88rem;">
+                        <div class="text-dark fw-medium">
+                            <i class="fa-solid fa-chalkboard text-primary me-2 small"></i> Class {{ c.class }}
                         </div>
-                        <span class="badge rounded-pill bg-secondary bg-opacity-20 text-white px-2.5 py-1">{{ c.count }} Students</span>
+                        <span class="badge rounded-pill bg-light text-dark border px-2.5 py-1">{{ c.count }} Students</span>
                     </li>
                     {% endfor %}
                 </ul>
@@ -192,8 +193,8 @@
     <div class="col-12">
         <div class="glass-panel">
             <div class="d-flex justify-content-between align-items-center mb-4">
-                <h5 class="mb-0 text-white"><i class="fa-solid fa-history text-primary me-2"></i>Recent Collections Ledger</h5>
-                <a href="{{ url_for('fee_entry') }}" class="btn btn-outline-info btn-sm px-3">Enter Payment Record</a>
+                <h5 class="mb-0 text-dark fw-bold"><i class="fa-solid fa-history text-primary me-2"></i>Recent Collections Ledger</h5>
+                <a href="{{ url_for('fee_entry') }}" class="btn btn-outline-primary btn-sm px-3">Enter Payment Record</a>
             </div>
             <div class="table-responsive">
                 <table class="table table-custom">
@@ -214,16 +215,16 @@
                         {% if recent_payments %}
                             {% for p in recent_payments %}
                             <tr class="align-middle">
-                                <td><span class="fw-bold text-white">{{ p.name }}</span></td>
+                                <td><span class="fw-bold text-dark">{{ p.name }}</span></td>
                                 <td><span class="badge badge-class">Class {{ p.class }}</span></td>
                                 {% if not active_campus_id %}
                                 <td>
-                                    <span class="badge bg-dark border border-secondary text-info">
+                                    <span class="badge bg-light border text-primary">
                                         <i class="fa-solid fa-school me-1" style="font-size: 10px;"></i>{{ p.campus_name }}
                                     </span>
                                 </td>
                                 {% endif %}
-                                <td>{{ p.month }} {{ p.year }}</td>
+                                <td class="text-dark">{{ p.month }} {{ p.year }}</td>
                                 <td><span class="badge badge-amount">Rs. {{ "{:,.0f}".format(p.paid_amount) }}</span></td>
                                 <td class="text-secondary small">{{ p.date_paid }}</td>
                                 <td>

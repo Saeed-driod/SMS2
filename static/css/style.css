@@ -151,10 +151,13 @@ h6 { font-size: 0.78rem; font-weight: 600; color: #334e68; }
     margin-bottom: 0;
 }
 
-.table-custom th {
+.table-custom thead,
+.table-custom th,
+.table thead,
+.table th {
     background-color: #eaf3fb !important;
     border-bottom: 1px solid #cfe0ee !important;
-    color: #2c4d6f;
+    color: #2c4d6f !important;
     font-weight: 700;
     text-transform: uppercase;
     font-size: 0.72rem;
@@ -162,7 +165,8 @@ h6 { font-size: 0.78rem; font-weight: 600; color: #334e68; }
     padding: 10px 14px;
 }
 
-.table-custom td {
+.table-custom td,
+.table td {
     padding: 10px 14px;
     border-bottom: 1px solid #eef5fb;
     vertical-align: middle;
@@ -171,12 +175,41 @@ h6 { font-size: 0.78rem; font-weight: 600; color: #334e68; }
     font-size: 0.835rem;
 }
 
-.table-custom tr:hover td {
+.table-custom tr:hover td,
+.table tr:hover td {
     background-color: #f1f7fc !important;
 }
 
 .table-row-pending td {
     background-color: #fffbeb !important;
+}
+
+/* Global Content Contrast Override (Prevents invisible white text on light canvases) */
+.app-main-content .glass-panel h1,
+.app-main-content .glass-panel h2,
+.app-main-content .glass-panel h3,
+.app-main-content .glass-panel h4,
+.app-main-content .glass-panel h5,
+.app-main-content .glass-panel h6,
+.app-main-content .glass-panel .text-white:not(.btn):not(.analytics-card),
+.app-main-content .table .text-white:not(.btn),
+.app-main-content .table-custom .text-white:not(.btn),
+.app-main-content .modal-custom .text-white:not(.btn),
+.app-main-content .page-content .text-white:not(.btn):not(.analytics-card) {
+    color: #0f2942 !important;
+}
+
+.app-main-content .glass-panel .text-light:not(.btn),
+.app-main-content .table .text-light:not(.btn),
+.app-main-content .table-custom .text-light:not(.btn) {
+    color: #2c4d6f !important;
+}
+
+/* Transform legacy dark badge pills to clean ice-blue badges */
+.app-main-content .badge.bg-dark {
+    background-color: #e0f2fe !important;
+    color: #0369a1 !important;
+    border: 1px solid #bae6fd !important;
 }
 
 /* Custom Nav Pills */

@@ -178,7 +178,7 @@
     <!-- Main Excel Sheet Table -->
     <div class="table-responsive" style="max-height: 70vh; overflow-y: auto;">
         <table class="table table-custom table-hover" id="feeSheetTable">
-            <thead style="position: sticky; top: 0; z-index: 10; background: #0b0f1d;">
+            <thead style="position: sticky; top: 0; z-index: 10;">
                 <tr>
                     <th style="width: 105px;" class="text-center">Roll / Barcode</th>
                     <th>Student Name</th>
@@ -186,7 +186,7 @@
                     <th>Phone / WhatsApp</th>
                     <th class="text-end">Monthly Fee</th>
                     <th class="text-end">Arrears</th>
-                    <th class="text-end text-info font-weight-bold">Total Payable</th>
+                    <th class="text-end text-primary font-weight-bold">Total Payable</th>
                     <th class="text-end text-success">Paid Amount</th>
                     <th class="text-end text-danger">Balance Due</th>
                     <th class="text-center" style="width: 100px;">Status</th>
@@ -205,14 +205,14 @@
                         
                         <!-- Student ID / Barcode Badge -->
                         <td class="text-center font-monospace">
-                            <span class="badge bg-dark border border-secondary text-info" style="font-size: 0.72rem;">
+                            <span class="badge bg-light border text-primary" style="font-size: 0.72rem;">
                                 <i class="fa-solid fa-barcode me-1"></i>STD-{{ row.id }}
                             </span>
                         </td>
                         
                         <!-- Student Name -->
                         <td>
-                            <span class="text-white fw-bold d-block">{{ row.name }}</span>
+                            <span class="text-dark fw-bold d-block">{{ row.name }}</span>
                             {% if session.role == 'admin' and not active_campus_id and row.campus_name %}
                             <span class="text-muted" style="font-size: 0.7rem;">{{ row.campus_name }}</span>
                             {% endif %}
