@@ -67,11 +67,13 @@
                             <i class="fa-solid fa-receipt"></i><span>Fee Collection</span>
                         </a>
                     </li>
+                    {% if session.role == 'admin' %}
                     <li class="nav-item">
                         <a href="{{ url_for('fee_analytics') }}" class="nav-link {% if '/fee/analytics' in request.path %}active{% endif %}">
                             <i class="fa-solid fa-chart-pie"></i><span>Fee Analytics & Reports</span>
                         </a>
                     </li>
+                    {% endif %}
                     <li class="nav-item">
                         <a href="{{ url_for('voucher_generate') }}" class="nav-link {% if '/voucher' in request.path %}active{% endif %}">
                             <i class="fa-solid fa-file-invoice-dollar"></i><span>Voucher Studio</span>

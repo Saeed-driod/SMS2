@@ -74,6 +74,19 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
+# Decorator to restrict access exclusively to admin role
+def admin_required(f):
+    from functools import wraps
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'logged_in' not in session:
+            return redirect(url_for('login'))
+        if session.get('role') != 'admin':
+            flash('Access denied! Only administrators can access Financial Analytics & Reports.', 'danger')
+            return redirect(url_for('dashboard'))
+        return f(*args, **kwargs)
+    return decorated_function
+
 # Context processor to inject campuses globally into templates
 @app.context_processor
 def inject_campuses():
@@ -1916,7 +1929,7 @@ def export_class_fee_sheet():
     return send_file(output, as_attachment=True, download_name=filename, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 @app.route('/fee/analytics')
-@login_required
+@admin_required
 def fee_analytics():
     active_campus_id = get_active_campus_id()
     conn = get_db_connection()
@@ -2145,7 +2158,7 @@ def fee_analytics():
                            transactions=filtered_txs)
 
 @app.route('/fee/analytics/export')
-@login_required
+@admin_required
 def fee_analytics_export():
     active_campus_id = get_active_campus_id()
     conn = get_db_connection()

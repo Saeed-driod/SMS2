@@ -23,7 +23,9 @@
             <a href="{{ url_for('student_add') }}" class="quick-toolbar-btn card-theme-green" title="Add Student"><i class="fa-solid fa-user-plus"></i></a>
             <a href="{{ url_for('class_fee_sheet') }}" class="quick-toolbar-btn card-theme-purple" title="Class Fee Register (Excel View)"><i class="fa-solid fa-table-list"></i></a>
             <a href="{{ url_for('fee_entry') }}" class="quick-toolbar-btn card-theme-red" title="Fee Collection"><i class="fa-solid fa-receipt"></i></a>
+            {% if session.role == 'admin' %}
             <a href="{{ url_for('fee_analytics') }}" class="quick-toolbar-btn card-theme-teal" title="Financial Analytics & Fee Reports"><i class="fa-solid fa-chart-pie"></i></a>
+            {% endif %}
             <a href="{{ url_for('students_view') }}" class="quick-toolbar-btn card-theme-dark" title="View Students"><i class="fa-solid fa-users"></i></a>
             <a href="{{ url_for('students_promotion') }}" class="quick-toolbar-btn card-theme-teal" title="Class Promotion Studio"><i class="fa-solid fa-graduation-cap"></i></a>
             <a href="{{ url_for('voucher_generate') }}" class="quick-toolbar-btn card-theme-blue" title="Voucher Studio"><i class="fa-solid fa-file-invoice-dollar"></i></a>
