@@ -130,10 +130,10 @@
                 <div class="glass-panel">
                     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3 pb-2 border-bottom border-secondary border-opacity-25">
                         <div>
-                            <h5 class="text-dark mb-0 fs-6 fw-bold">
+                            <h5 class="text-white mb-0 fs-6 fw-bold">
                                 Students in <span class="badge badge-class">Class {{ source_class }}</span>
                             </h5>
-                            <span class="text-secondary small">Total <strong class="text-dark">{{ students|length }}</strong> enrolled students</span>
+                            <span class="text-secondary small">Total <strong class="text-white">{{ students|length }}</strong> enrolled students</span>
                         </div>
                         <div class="d-flex gap-2">
                             <button type="button" class="btn btn-secondary btn-sm" onclick="toggleAllStudents(true)">
@@ -148,7 +148,7 @@
                     {% if students %}
                     <div class="table-responsive" style="max-height: 520px; overflow-y: auto;">
                         <table class="table table-custom">
-                            <thead class="sticky-top">
+                            <thead class="sticky-top" style="background: #0d1222;">
                                 <tr>
                                     <th style="width: 40px;">
                                         <input class="form-check-input" type="checkbox" id="masterCheckbox" checked onchange="toggleAllStudents(this.checked)">
@@ -170,14 +170,14 @@
                                     </td>
                                     <td>
                                         <div class="d-flex flex-column">
-                                            <span class="fw-bold text-dark">{{ s.name }}</span>
+                                            <span class="fw-bold text-white">{{ s.name }}</span>
                                             <span class="text-muted" style="font-size: 0.72rem;">ID: #{{ s.id }}</span>
                                         </div>
                                     </td>
                                     <td class="text-secondary">{{ s.father_name or '—' }}</td>
                                     {% if session.role == 'admin' and not active_campus_id %}
                                     <td>
-                                        <span class="badge bg-light border text-primary">
+                                        <span class="badge bg-dark border border-secondary text-info">
                                             <i class="fa-solid fa-school me-1" style="font-size: 10px;"></i>{{ s.campus_name }}
                                         </span>
                                     </td>
