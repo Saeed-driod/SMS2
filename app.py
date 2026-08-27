@@ -3,7 +3,8 @@ import sqlite3
 import os
 import io
 import re
-from datetime import datetime
+import json
+from datetime import datetime, timedelta
 import pandas as pd
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
@@ -1912,6 +1913,391 @@ def export_class_fee_sheet():
     output.seek(0)
     safe_class = re.sub(r'[^a-zA-Z0-9_-]', '_', target_class or 'All')
     filename = f"Fee_Sheet_Class_{safe_class}_{target_month}_{target_year}.xlsx"
+    return send_file(output, as_attachment=True, download_name=filename, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+@app.route('/fee/analytics')
+@login_required
+def fee_analytics():
+    active_campus_id = get_active_campus_id()
+    conn = get_db_connection()
+    
+    # 1. Read Filter Parameters
+    period = request.args.get('period', 'monthly').strip()
+    if period not in ('daily', 'monthly', 'yearly', 'custom'):
+        period = 'monthly'
+        
+    today_str = datetime.now().strftime('%Y-%m-%d')
+    selected_date = request.args.get('date', today_str).strip() or today_str
+    
+    curr_month_name = MONTH_NUM_TO_NAME[datetime.now().month]
+    selected_month = request.args.get('month', curr_month_name).strip() or curr_month_name
+    
+    curr_year = datetime.now().year
+    selected_year = request.args.get('year', curr_year, type=int) or curr_year
+    
+    start_date = request.args.get('start_date', '').strip()
+    end_date = request.args.get('end_date', '').strip()
+    
+    selected_campus_id = request.args.get('campus_id', type=int)
+    if session.get('role') != 'admin':
+        selected_campus_id = active_campus_id
+    elif not selected_campus_id and active_campus_id:
+        selected_campus_id = active_campus_id
+        
+    payment_mode_filter = request.args.get('payment_mode', 'all').strip()
+    category_filter = request.args.get('category', 'all').strip()
+    class_filter = request.args.get('class', 'all').strip()
+    
+    # 2. Fetch Campuses and Classes for Filter Dropdowns
+    campuses = conn.execute("SELECT id, name, code FROM campuses ORDER BY name").fetchall()
+    classes = conn.execute("SELECT DISTINCT class FROM students WHERE class IS NOT NULL ORDER BY class").fetchall()
+    classes_list = [c['class'] for c in classes if c['class']]
+    
+    # Fetch all fee transactions & annual charges payments within relevant scope
+    campus_condition = ""
+    campus_params = []
+    if selected_campus_id:
+        campus_condition = " WHERE (f.campus_id = ? OR (f.campus_id IS NULL AND s.campus_id = ?))"
+        campus_params = [selected_campus_id, selected_campus_id]
+        
+    fee_sql = f"""
+        SELECT f.id, f.student_id, f.month, f.year, f.paid_amount, f.date_paid, f.payment_mode, f.reference_no, f.notes, f.collected_by, f.campus_id,
+               s.name as student_name, s.father_name, s.class as student_class, c.name as campus_name, 'Fee' as source_table
+        FROM fees f
+        LEFT JOIN students s ON f.student_id = s.id
+        LEFT JOIN campuses c ON f.campus_id = c.id
+        {campus_condition}
+    """
+    
+    ann_campus_cond = ""
+    ann_params = []
+    if selected_campus_id:
+        ann_campus_cond = " WHERE (a.campus_id = ? OR (a.campus_id IS NULL AND s.campus_id = ?))"
+        ann_params = [selected_campus_id, selected_campus_id]
+        
+    ann_sql = f"""
+        SELECT a.id, a.student_id, 'Annual Charges' as month, a.year, a.paid_amount, a.date_paid, a.payment_mode, a.reference_no, a.notes, a.collected_by, a.campus_id,
+               s.name as student_name, s.father_name, s.class as student_class, c.name as campus_name, 'Annual' as source_table
+        FROM annual_charges_payments a
+        LEFT JOIN students s ON a.student_id = s.id
+        LEFT JOIN campuses c ON a.campus_id = c.id
+        {ann_campus_cond}
+    """
+    
+    fee_rows = conn.execute(fee_sql, campus_params).fetchall()
+    ann_rows = conn.execute(ann_sql, ann_params).fetchall()
+    conn.close()
+    
+    all_raw_txs = []
+    for r in fee_rows:
+        all_raw_txs.append(dict(r))
+    for r in ann_rows:
+        all_raw_txs.append(dict(r))
+        
+    def categorize_tx(tx):
+        m = (tx.get('month') or '').strip()
+        st = tx.get('source_table', '')
+        if st == 'Annual' or m == 'Annual Charges':
+            return 'Annual Charges'
+        elif m in ('Books', 'Books Payment', 'Books & Stationary', 'Books / Stationary'):
+            return 'Books / Syllabus'
+        elif m in ('Admission', 'Admission Fee', 'Registration Fee'):
+            return 'Admission Fee'
+        elif m in ('Uniform', 'Uniform Charges'):
+            return 'Uniform'
+        elif m in MONTH_NAME_TO_NUM:
+            return 'Monthly Tuition'
+        else:
+            return m or 'Other Charges'
+
+    def normalize_mode(mode):
+        mode = (mode or '').strip().lower()
+        if any(x in mode for x in ('bank', 'deposit', 'transfer', 'mcb', 'hbl', 'ubl', 'meezan', 'allied')):
+            return 'Bank'
+        elif any(x in mode for x in ('online', 'app', 'jazz', 'easy', 'nayapay', 'sadapay', 'mobile')):
+            return 'Online'
+        else:
+            return 'Voucher'
+
+    for tx in all_raw_txs:
+        tx['category'] = categorize_tx(tx)
+        tx['norm_mode'] = normalize_mode(tx.get('payment_mode'))
+        tx['paid_amount'] = float(tx.get('paid_amount') or 0.0)
+        tx['date_paid_clean'] = (tx.get('date_paid') or '').strip()
+
+    # Filter according to period
+    if period == 'daily':
+        filtered_txs = [t for t in all_raw_txs if t['date_paid_clean'].startswith(selected_date)]
+    elif period == 'monthly':
+        selected_m_num = MONTH_NAME_TO_NUM.get(selected_month, datetime.now().month)
+        m_prefix = f"{selected_year}-{selected_m_num:02d}"
+        filtered_txs = [t for t in all_raw_txs if (t['month'] == selected_month and int(t['year'] or 0) == selected_year) or t['date_paid_clean'].startswith(m_prefix)]
+    elif period == 'yearly':
+        filtered_txs = [t for t in all_raw_txs if int(t['year'] or 0) == selected_year or t['date_paid_clean'].startswith(str(selected_year))]
+    elif period == 'custom':
+        filtered_txs = [t for t in all_raw_txs if (not start_date or t['date_paid_clean'] >= start_date) and (not end_date or t['date_paid_clean'] <= end_date)]
+    else:
+        filtered_txs = list(all_raw_txs)
+
+    # Sub-filters
+    if payment_mode_filter != 'all':
+        filtered_txs = [t for t in filtered_txs if t['norm_mode'].lower() == payment_mode_filter.lower()]
+    if category_filter != 'all':
+        filtered_txs = [t for t in filtered_txs if t['category'].lower() == category_filter.lower()]
+    if class_filter != 'all':
+        filtered_txs = [t for t in filtered_txs if (t.get('student_class') or '').lower() == class_filter.lower()]
+
+    total_revenue = sum(t['paid_amount'] for t in filtered_txs)
+    total_tx_count = len(filtered_txs)
+    avg_ticket = round(total_revenue / total_tx_count, 0) if total_tx_count > 0 else 0
+
+    mode_voucher_sum = sum(t['paid_amount'] for t in filtered_txs if t['norm_mode'] == 'Voucher')
+    mode_bank_sum = sum(t['paid_amount'] for t in filtered_txs if t['norm_mode'] == 'Bank')
+    mode_online_sum = sum(t['paid_amount'] for t in filtered_txs if t['norm_mode'] == 'Online')
+
+    cat_tuition_sum = sum(t['paid_amount'] for t in filtered_txs if t['category'] == 'Monthly Tuition')
+    cat_annual_sum = sum(t['paid_amount'] for t in filtered_txs if t['category'] == 'Annual Charges')
+    cat_books_sum = sum(t['paid_amount'] for t in filtered_txs if t['category'] == 'Books / Syllabus')
+    cat_admission_sum = sum(t['paid_amount'] for t in filtered_txs if t['category'] == 'Admission Fee')
+    cat_other_sum = sum(t['paid_amount'] for t in filtered_txs if t['category'] not in ('Monthly Tuition', 'Annual Charges', 'Books / Syllabus', 'Admission Fee'))
+
+    # Time-series Charts Data
+    # 1. 14-Day Timeline
+    daily_labels = []
+    daily_values = []
+    for d in range(13, -1, -1):
+        day_dt = datetime.now() - timedelta(days=d)
+        d_key = day_dt.strftime('%Y-%m-%d')
+        d_label = day_dt.strftime('%d %b')
+        day_sum = sum(t['paid_amount'] for t in all_raw_txs if t['date_paid_clean'].startswith(d_key))
+        daily_labels.append(d_label)
+        daily_values.append(day_sum)
+
+    # 2. 12-Month Year Curve
+    monthly_labels = list(MONTH_NUM_TO_NAME.values())
+    monthly_values = []
+    for m_idx in range(1, 13):
+        m_name = MONTH_NUM_TO_NAME[m_idx]
+        m_prefix = f"{selected_year}-{m_idx:02d}"
+        m_sum = sum(
+            t['paid_amount'] for t in all_raw_txs 
+            if (int(t.get('year') or 0) == selected_year and t.get('month') == m_name) or t['date_paid_clean'].startswith(m_prefix)
+        )
+        monthly_values.append(m_sum)
+
+    # 3. Multi-Year
+    yearly_labels = ['2024', '2025', '2026', '2027']
+    yearly_values = []
+    for yr in yearly_labels:
+        y_int = int(yr)
+        y_sum = sum(t['paid_amount'] for t in all_raw_txs if int(t.get('year') or 0) == y_int or t['date_paid_clean'].startswith(yr))
+        yearly_values.append(y_sum)
+
+    # 4. Class Breakdown
+    class_sums = {}
+    for c in classes_list:
+        class_sums[c] = 0.0
+    for t in filtered_txs:
+        c_name = t.get('student_class') or 'Unknown'
+        class_sums[c_name] = class_sums.get(c_name, 0.0) + t['paid_amount']
+    sorted_classes = sorted(class_sums.items(), key=lambda x: x[1], reverse=True)
+    class_labels = [x[0] for x in sorted_classes if x[1] > 0] or list(class_sums.keys())[:10]
+    class_values = [x[1] for x in sorted_classes if x[1] > 0] or [0] * len(class_labels)
+
+    filtered_txs.sort(key=lambda x: (x.get('date_paid_clean') or '', x.get('id') or 0), reverse=True)
+
+    years_list = [2024, 2025, 2026, 2027, 2028]
+
+    return render_template('fee_analytics.html',
+                           period=period,
+                           selected_date=selected_date,
+                           selected_month=selected_month,
+                           selected_year=selected_year,
+                           start_date=start_date,
+                           end_date=end_date,
+                           selected_campus_id=selected_campus_id,
+                           payment_mode_filter=payment_mode_filter,
+                           category_filter=category_filter,
+                           class_filter=class_filter,
+                           campuses=campuses,
+                           classes=classes_list,
+                           months=MONTH_NUM_TO_NAME,
+                           years=years_list,
+                           total_revenue=total_revenue,
+                           total_tx_count=total_tx_count,
+                           avg_ticket=avg_ticket,
+                           mode_voucher_sum=mode_voucher_sum,
+                           mode_bank_sum=mode_bank_sum,
+                           mode_online_sum=mode_online_sum,
+                           cat_tuition_sum=cat_tuition_sum,
+                           cat_annual_sum=cat_annual_sum,
+                           cat_books_sum=cat_books_sum,
+                           cat_admission_sum=cat_admission_sum,
+                           cat_other_sum=cat_other_sum,
+                           daily_labels_json=json.dumps(daily_labels),
+                           daily_values_json=json.dumps(daily_values),
+                           monthly_labels_json=json.dumps(monthly_labels),
+                           monthly_values_json=json.dumps(monthly_values),
+                           yearly_labels_json=json.dumps(yearly_labels),
+                           yearly_values_json=json.dumps(yearly_values),
+                           class_labels_json=json.dumps(class_labels),
+                           class_values_json=json.dumps(class_values),
+                           transactions=filtered_txs)
+
+@app.route('/fee/analytics/export')
+@login_required
+def fee_analytics_export():
+    active_campus_id = get_active_campus_id()
+    conn = get_db_connection()
+    
+    period = request.args.get('period', 'monthly').strip()
+    selected_date = request.args.get('date', datetime.now().strftime('%Y-%m-%d')).strip()
+    selected_month = request.args.get('month', MONTH_NUM_TO_NAME[datetime.now().month]).strip()
+    selected_year = request.args.get('year', datetime.now().year, type=int)
+    start_date = request.args.get('start_date', '').strip()
+    end_date = request.args.get('end_date', '').strip()
+    
+    selected_campus_id = request.args.get('campus_id', type=int)
+    if session.get('role') != 'admin':
+        selected_campus_id = active_campus_id
+    elif not selected_campus_id and active_campus_id:
+        selected_campus_id = active_campus_id
+        
+    payment_mode_filter = request.args.get('payment_mode', 'all').strip()
+    category_filter = request.args.get('category', 'all').strip()
+    class_filter = request.args.get('class', 'all').strip()
+    
+    campus_condition = ""
+    campus_params = []
+    if selected_campus_id:
+        campus_condition = " WHERE (f.campus_id = ? OR (f.campus_id IS NULL AND s.campus_id = ?))"
+        campus_params = [selected_campus_id, selected_campus_id]
+        
+    fee_sql = f"""
+        SELECT f.id, f.student_id, f.month, f.year, f.paid_amount, f.date_paid, f.payment_mode, f.reference_no, f.notes, f.collected_by, f.campus_id,
+               s.name as student_name, s.father_name, s.class as student_class, c.name as campus_name, 'Fee' as source_table
+        FROM fees f
+        LEFT JOIN students s ON f.student_id = s.id
+        LEFT JOIN campuses c ON f.campus_id = c.id
+        {campus_condition}
+    """
+    
+    ann_campus_cond = ""
+    ann_params = []
+    if selected_campus_id:
+        ann_campus_cond = " WHERE (a.campus_id = ? OR (a.campus_id IS NULL AND s.campus_id = ?))"
+        ann_params = [selected_campus_id, selected_campus_id]
+        
+    ann_sql = f"""
+        SELECT a.id, a.student_id, 'Annual Charges' as month, a.year, a.paid_amount, a.date_paid, a.payment_mode, a.reference_no, a.notes, a.collected_by, a.campus_id,
+               s.name as student_name, s.father_name, s.class as student_class, c.name as campus_name, 'Annual' as source_table
+        FROM annual_charges_payments a
+        LEFT JOIN students s ON a.student_id = s.id
+        LEFT JOIN campuses c ON a.campus_id = c.id
+        {ann_campus_cond}
+    """
+    
+    fee_rows = conn.execute(fee_sql, campus_params).fetchall()
+    ann_rows = conn.execute(ann_sql, ann_params).fetchall()
+    conn.close()
+    
+    all_raw_txs = [dict(r) for r in fee_rows] + [dict(r) for r in ann_rows]
+    
+    def categorize_tx(tx):
+        m = (tx.get('month') or '').strip()
+        st = tx.get('source_table', '')
+        if st == 'Annual' or m == 'Annual Charges':
+            return 'Annual Charges'
+        elif m in ('Books', 'Books Payment', 'Books & Stationary', 'Books / Stationary'):
+            return 'Books / Syllabus'
+        elif m in ('Admission', 'Admission Fee', 'Registration Fee'):
+            return 'Admission Fee'
+        elif m in ('Uniform', 'Uniform Charges'):
+            return 'Uniform'
+        elif m in MONTH_NAME_TO_NUM:
+            return 'Monthly Tuition'
+        else:
+            return m or 'Other Charges'
+
+    def normalize_mode(mode):
+        mode = (mode or '').strip().lower()
+        if any(x in mode for x in ('bank', 'deposit', 'transfer', 'mcb', 'hbl', 'ubl', 'meezan', 'allied')):
+            return 'Bank'
+        elif any(x in mode for x in ('online', 'app', 'jazz', 'easy', 'nayapay', 'sadapay', 'mobile')):
+            return 'Online'
+        else:
+            return 'Voucher'
+
+    for tx in all_raw_txs:
+        tx['category'] = categorize_tx(tx)
+        tx['norm_mode'] = normalize_mode(tx.get('payment_mode'))
+        tx['paid_amount'] = float(tx.get('paid_amount') or 0.0)
+        tx['date_paid_clean'] = (tx.get('date_paid') or '').strip()
+
+    if period == 'daily':
+        filtered_txs = [t for t in all_raw_txs if t['date_paid_clean'].startswith(selected_date)]
+    elif period == 'monthly':
+        selected_m_num = MONTH_NAME_TO_NUM.get(selected_month, datetime.now().month)
+        m_prefix = f"{selected_year}-{selected_m_num:02d}"
+        filtered_txs = [t for t in all_raw_txs if (t['month'] == selected_month and int(t['year'] or 0) == selected_year) or t['date_paid_clean'].startswith(m_prefix)]
+    elif period == 'yearly':
+        filtered_txs = [t for t in all_raw_txs if int(t['year'] or 0) == selected_year or t['date_paid_clean'].startswith(str(selected_year))]
+    elif period == 'custom':
+        filtered_txs = [t for t in all_raw_txs if (not start_date or t['date_paid_clean'] >= start_date) and (not end_date or t['date_paid_clean'] <= end_date)]
+    else:
+        filtered_txs = list(all_raw_txs)
+
+    if payment_mode_filter != 'all':
+        filtered_txs = [t for t in filtered_txs if t['norm_mode'].lower() == payment_mode_filter.lower()]
+    if category_filter != 'all':
+        filtered_txs = [t for t in filtered_txs if t['category'].lower() == category_filter.lower()]
+    if class_filter != 'all':
+        filtered_txs = [t for t in filtered_txs if (t.get('student_class') or '').lower() == class_filter.lower()]
+
+    filtered_txs.sort(key=lambda x: (x.get('date_paid_clean') or '', x.get('id') or 0), reverse=True)
+
+    rows = []
+    for t in filtered_txs:
+        rows.append({
+            'Tx ID': t.get('id'),
+            'Date Paid': t.get('date_paid_clean'),
+            'Student ID': t.get('student_id'),
+            'Student Name': t.get('student_name') or '—',
+            'Father Name': t.get('father_name') or '—',
+            'Class': t.get('student_class') or '—',
+            'Fee Category': t.get('category'),
+            'Month / Year': f"{t.get('month')} {t.get('year')}",
+            'Amount Paid (Rs.)': t.get('paid_amount'),
+            'Payment Mode': t.get('payment_mode') or 'Voucher',
+            'Reference #': t.get('reference_no') or '',
+            'Collected By': t.get('collected_by') or '',
+            'Campus': t.get('campus_name') or ''
+        })
+
+    df = pd.DataFrame(rows) if rows else pd.DataFrame(columns=[
+        'Tx ID', 'Date Paid', 'Student ID', 'Student Name', 'Father Name', 'Class',
+        'Fee Category', 'Month / Year', 'Amount Paid (Rs.)', 'Payment Mode', 'Reference #', 'Collected By', 'Campus'
+    ])
+
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, sheet_name="Fee Collection", index=False)
+        ws = writer.sheets["Fee Collection"]
+        from openpyxl.styles import Font, PatternFill, Alignment
+        header_fill = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
+        header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+        for cell in ws[1]:
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+        from openpyxl.utils import get_column_letter
+        for col in ws.columns:
+            max_len = max(len(str(cell.value or '')) for cell in col)
+            col_letter = get_column_letter(col[0].column)
+            ws.column_dimensions[col_letter].width = max(max_len + 4, 14)
+
+    output.seek(0)
+    filename = f"Fee_Collection_Report_{period}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
     return send_file(output, as_attachment=True, download_name=filename, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 @app.route('/students/<int:student_id>/ledger')
