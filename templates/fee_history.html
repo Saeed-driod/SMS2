@@ -207,6 +207,22 @@
                                 <span class="badge bg-warning bg-opacity-20 text-warning border border-warning border-opacity-25">
                                     <i class="fa-solid fa-shield me-1"></i>Annual Charges {{ t.year }}
                                 </span>
+                            {% elif t.month in ('Books', 'Books Payment', 'Books & Stationary', 'Books / Stationary') %}
+                                <span class="badge bg-primary bg-opacity-20 text-info border border-primary border-opacity-25">
+                                    <i class="fa-solid fa-book me-1 text-warning"></i>Books Payment ({{ t.year }})
+                                </span>
+                            {% elif t.month in ('Admission', 'Admission Fee', 'Registration Fee') %}
+                                <span class="badge bg-info bg-opacity-20 text-info border border-info border-opacity-25">
+                                    <i class="fa-solid fa-id-card me-1"></i>Admission Fee ({{ t.year }})
+                                </span>
+                            {% elif t.month in ('Uniform', 'Uniform Charges') %}
+                                <span class="badge bg-secondary bg-opacity-25 text-light border border-secondary border-opacity-25">
+                                    <i class="fa-solid fa-shirt me-1 text-secondary"></i>Uniform Charges ({{ t.year }})
+                                </span>
+                            {% elif t.month not in ('January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December') %}
+                                <span class="badge bg-purple bg-opacity-25 text-info border border-info border-opacity-25">
+                                    <i class="fa-solid fa-tag me-1 text-info"></i>{{ t.month }} ({{ t.year }})
+                                </span>
                             {% else %}
                                 <div class="d-flex align-items-center gap-1">
                                     <i class="fa-solid fa-calendar-check text-info me-1" style="font-size: 11px;"></i>

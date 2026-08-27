@@ -170,6 +170,212 @@ def get_student_fee_details(student, target_month_name, target_year, months=1, p
         'months_to_pay': months
     }
 
+def record_tuition_payment(conn, student, start_month_name, start_year, paid_amount, num_months=1,
+                           date_paid=None, payment_mode='Voucher', reference_no='', notes='', collected_by='operator'):
+    """
+    Intelligently records tuition payment.
+    - If num_months > 1, distributes paid_amount across consecutive months starting from (start_month_name, start_year).
+    - If num_months == 1, but paid_amount >= 1.5 * monthly_fee and student has unpaid prior months or advance months,
+      it smartly detects the unpaid sequence (e.g. August + September) and distributes paid_amount across those months.
+    - Updates existing records if already present, or inserts new rows in `fees`.
+    Returns list of recorded month summaries, e.g. ["August 2026: Rs. 2,600", "September 2026: Rs. 2,600"]
+    """
+    student_id = student['id']
+    campus_id = student['campus_id']
+    monthly_fee = float(student['monthly_fee'] or 0.0)
+    start_m_num = MONTH_NAME_TO_NUM.get(start_month_name, 3)
+    start_y = int(start_year)
+    date_paid = date_paid or datetime.now().strftime('%Y-%m-%d')
+    num_months = max(1, int(num_months or 1))
+    
+    # 1. Fetch student's existing monthly fee payments
+    existing_fees = conn.execute(
+        "SELECT id, month, year, paid_amount FROM fees WHERE student_id = ?",
+        (student_id,)
+    ).fetchall()
+    
+    existing_fee_map = {}
+    for f in existing_fees:
+        m_num = MONTH_NAME_TO_NUM.get(f['month'], 0)
+        if m_num > 0:
+            existing_fee_map[(m_num, f['year'])] = f
+
+    # 2. Determine target months to credit
+    target_months = []
+    if num_months > 1:
+        for i in range(num_months):
+            idx = start_m_num - 1 + i
+            m_num = (idx % 12) + 1
+            m_year = start_y + (idx // 12)
+            target_months.append((m_num, m_year))
+    else:
+        # num_months == 1: Check if paid_amount is a multi-month lumpsum
+        if monthly_fee > 0 and paid_amount >= monthly_fee * 1.5:
+            calc_months = max(1, int(round(paid_amount / monthly_fee)))
+            std_start_m = int(student['start_month'] or 3)
+            std_start_y = int(student['start_year'] or start_y)
+            
+            # Find unpaid months from std_start_m/std_start_y up to (start_m_num, start_y)
+            unpaid_months_prior = []
+            curr_y = std_start_y
+            curr_m = std_start_m
+            while (curr_y < start_y) or (curr_y == start_y and curr_m <= start_m_num):
+                rec = existing_fee_map.get((curr_m, curr_y))
+                if not rec or float(rec['paid_amount'] or 0.0) < (monthly_fee * 0.5):
+                    unpaid_months_prior.append((curr_m, curr_y))
+                curr_m += 1
+                if curr_m > 12:
+                    curr_m = 1
+                    curr_y += 1
+            
+            if unpaid_months_prior:
+                if len(unpaid_months_prior) <= calc_months:
+                    target_months = list(unpaid_months_prior)
+                    while len(target_months) < calc_months:
+                        last_m, last_y = target_months[-1]
+                        next_m = (last_m % 12) + 1
+                        next_y = last_y + (1 if last_m == 12 else 0)
+                        target_months.append((next_m, next_y))
+                else:
+                    target_months = unpaid_months_prior[:calc_months]
+            else:
+                for i in range(calc_months):
+                    idx = start_m_num - 1 + i
+                    m_num = (idx % 12) + 1
+                    m_year = start_y + (idx // 12)
+                    target_months.append((m_num, m_year))
+        else:
+            target_months = [(start_m_num, start_y)]
+            
+    # 3. Distribute paid_amount across target_months
+    remaining_amount = paid_amount
+    month_summaries = []
+    
+    for i, (m_num, m_year) in enumerate(target_months):
+        m_name = MONTH_NUM_TO_NAME[m_num]
+        is_last = (i == len(target_months) - 1)
+        
+        if monthly_fee > 0:
+            if is_last:
+                m_paid = remaining_amount
+            else:
+                m_paid = min(monthly_fee, remaining_amount)
+        else:
+            m_paid = remaining_amount / len(target_months)
+            
+        remaining_amount -= m_paid
+        
+        existing_rec = existing_fee_map.get((m_num, m_year))
+        custom_notes = notes or (f'{m_name} {m_year} Tuition Fee' if len(target_months) > 1 else '')
+        
+        if existing_rec:
+            conn.execute('''
+                UPDATE fees 
+                SET paid_amount = ?, date_paid = ?, payment_mode = ?, reference_no = ?, notes = ?, collected_by = ?
+                WHERE id = ?
+            ''', (m_paid, date_paid, payment_mode, reference_no, custom_notes, collected_by, existing_rec['id']))
+        else:
+            conn.execute('''
+                INSERT INTO fees (student_id, month, year, paid_amount, date_paid, payment_mode, reference_no, notes, collected_by, campus_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (student_id, m_name, m_year, m_paid, date_paid, payment_mode, reference_no, custom_notes, collected_by, campus_id))
+            
+        month_summaries.append(f"{m_name} {m_year} (Rs. {m_paid:,.0f})")
+        
+    return month_summaries
+
+def repair_existing_lump_sum_fees(conn):
+    """
+    Finds existing fee records where paid_amount is a multiple of monthly_fee (e.g. 5200 for 2600 fee)
+    and splits them into their corresponding unpaid/consecutive monthly records so all months reflect accurately as Paid.
+    """
+    try:
+        rows = conn.execute('''
+            SELECT f.id, f.student_id, f.month, f.year, f.paid_amount, f.date_paid, f.payment_mode, f.reference_no, f.notes, f.collected_by, f.campus_id,
+                   s.name, s.monthly_fee, s.start_month, s.start_year
+            FROM fees f
+            JOIN students s ON f.student_id = s.id
+            WHERE f.paid_amount >= s.monthly_fee * 1.5 AND s.monthly_fee > 0
+              AND f.month IN ('January','February','March','April','May','June','July','August','September','October','November','December')
+            ORDER BY f.id ASC
+        ''').fetchall()
+        
+        for r in rows:
+            monthly_fee = float(r['monthly_fee'])
+            paid_amount = float(r['paid_amount'])
+            calc_months = int(round(paid_amount / monthly_fee))
+            if calc_months <= 1:
+                continue
+                
+            student_id = r['student_id']
+            campus_id = r['campus_id']
+            start_m_num = MONTH_NAME_TO_NUM.get(r['month'], 3)
+            start_y = int(r['year'])
+            date_paid = r['date_paid']
+            payment_mode = r['payment_mode']
+            reference_no = r['reference_no']
+            collected_by = r['collected_by']
+            
+            all_fees = conn.execute("SELECT id, month, year, paid_amount FROM fees WHERE student_id = ? AND id != ?", (student_id, r['id'])).fetchall()
+            existing_map = {}
+            for f in all_fees:
+                mn = MONTH_NAME_TO_NUM.get(f['month'], 0)
+                if mn > 0:
+                    existing_map[(mn, f['year'])] = f
+                    
+            std_start_m = int(r['start_month'] or 3)
+            std_start_y = int(r['start_year'] or start_y)
+            
+            unpaid_prior = []
+            cy = std_start_y
+            cm = std_start_m
+            while (cy < start_y) or (cy == start_y and cm <= start_m_num):
+                rec = existing_map.get((cm, cy))
+                if not rec or float(rec['paid_amount'] or 0.0) < (monthly_fee * 0.5):
+                    unpaid_prior.append((cm, cy))
+                cm += 1
+                if cm > 12:
+                    cm = 1
+                    cy += 1
+                    
+            if unpaid_prior:
+                if len(unpaid_prior) <= calc_months:
+                    target_months = list(unpaid_prior)
+                    while len(target_months) < calc_months:
+                        lm, ly = target_months[-1]
+                        nm = (lm % 12) + 1
+                        ny = ly + (1 if lm == 12 else 0)
+                        target_months.append((nm, ny))
+                else:
+                    target_months = unpaid_prior[:calc_months]
+            else:
+                target_months = []
+                for i in range(calc_months):
+                    idx = start_m_num - 1 + i
+                    target_months.append(((idx % 12) + 1, start_y + (idx // 12)))
+                    
+            rem = paid_amount
+            for i, (mn, my) in enumerate(target_months):
+                mname = MONTH_NUM_TO_NAME[mn]
+                is_last = (i == len(target_months) - 1)
+                alloc = rem if is_last else min(monthly_fee, rem)
+                rem -= alloc
+                
+                if i == 0:
+                    conn.execute('''
+                        UPDATE fees 
+                        SET month = ?, year = ?, paid_amount = ?, notes = ?
+                        WHERE id = ?
+                    ''', (mname, my, alloc, f'{mname} {my} Tuition (Split from lump sum)', r['id']))
+                else:
+                    conn.execute('''
+                        INSERT INTO fees (student_id, month, year, paid_amount, date_paid, payment_mode, reference_no, notes, collected_by, campus_id)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (student_id, mname, my, alloc, date_paid, payment_mode, reference_no, f'{mname} {my} Tuition (Split from lump sum)', collected_by, campus_id))
+        conn.commit()
+    except Exception as e:
+        print("Lump sum fees auto-repair note:", e)
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if 'logged_in' in session:
@@ -453,6 +659,53 @@ def export_campus_excel(campus_id):
     return send_file(output, as_attachment=True, download_name=filename, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 
+def build_student_query_filters(search='', class_filter='', campus_filter=None, status_filter='', active_campus_id=None):
+    where_sql = ""
+    params = []
+    
+    if active_campus_id:
+        where_sql += " AND s.campus_id = ?"
+        params.append(active_campus_id)
+    elif campus_filter:
+        where_sql += " AND s.campus_id = ?"
+        params.append(campus_filter)
+        
+    if search:
+        search_clean = search.strip()
+        id_match = re.match(r'^(?:std[-_]?)?(\d+)$', search_clean, re.IGNORECASE)
+        words = search_clean.split()
+        if id_match:
+            exact_id = int(id_match.group(1))
+            where_sql += """ AND (
+                s.id = ? 
+                OR CAST(s.id AS TEXT) LIKE ? 
+                OR LOWER(s.name) LIKE ? 
+                OR LOWER(COALESCE(s.father_name, '')) LIKE ? 
+                OR LOWER(COALESCE(s.phone_number, '')) LIKE ?
+            )"""
+            params.extend([exact_id, f"%{exact_id}%", f"%{search_clean.lower()}%", f"%{search_clean.lower()}%", f"%{search_clean.lower()}%"])
+        elif words:
+            for word in words:
+                w_lower = f"%{word.lower()}%"
+                where_sql += """ AND (
+                    LOWER(s.name) LIKE ? 
+                    OR LOWER(COALESCE(s.father_name, '')) LIKE ? 
+                    OR LOWER(COALESCE(s.phone_number, '')) LIKE ? 
+                    OR LOWER(COALESCE(s.class, '')) LIKE ? 
+                    OR CAST(s.id AS TEXT) LIKE ?
+                )"""
+                params.extend([w_lower, w_lower, w_lower, w_lower, f"%{word}%"])
+                
+    if class_filter:
+        where_sql += " AND s.class = ?"
+        params.append(class_filter)
+
+    if status_filter:
+        where_sql += " AND s.status = ?"
+        params.append(status_filter)
+        
+    return where_sql, params
+
 @app.route('/students/export')
 @login_required
 def export_students_excel():
@@ -469,32 +722,14 @@ def export_students_excel():
         LEFT JOIN campuses c ON s.campus_id = c.id
         WHERE 1=1
     '''
-    params = []
-    
-    if active_campus_id:
-        query += " AND s.campus_id = ?"
-        params.append(active_campus_id)
-    elif campus_filter:
-        query += " AND s.campus_id = ?"
-        params.append(campus_filter)
-        
-    if search:
-        id_digits = re.sub(r'^[A-Za-z]+[-_]?', '', search)
-        if id_digits.isdigit():
-            query += " AND (s.name LIKE ? OR s.father_name LIKE ? OR s.phone_number LIKE ? OR s.id = ? OR CAST(s.id AS TEXT) LIKE ?)"
-            params.extend([f"%{search}%", f"%{search}%", f"%{search}%", int(id_digits), f"%{search}%"])
-        else:
-            query += " AND (s.name LIKE ? OR s.father_name LIKE ? OR s.phone_number LIKE ? OR CAST(s.id AS TEXT) LIKE ?)"
-            params.extend([f"%{search}%", f"%{search}%", f"%{search}%", f"%{search}%"])
-        
-    if class_filter:
-        query += " AND s.class = ?"
-        params.append(class_filter)
-
-    if status_filter:
-        query += " AND s.status = ?"
-        params.append(status_filter)
-        
+    where_sql, params = build_student_query_filters(
+        search=search,
+        class_filter=class_filter,
+        campus_filter=campus_filter,
+        status_filter=status_filter,
+        active_campus_id=active_campus_id
+    )
+    query += where_sql
     query += " ORDER BY s.class, s.name"
     students = conn.execute(query, params).fetchall()
 
@@ -662,31 +897,14 @@ def students_view():
         LEFT JOIN campuses c ON s.campus_id = c.id
         WHERE 1=1
     '''
-    params = []
-    
-    if active_campus_id:
-        query += " AND s.campus_id = ?"
-        params.append(active_campus_id)
-    elif campus_filter:
-        query += " AND s.campus_id = ?"
-        params.append(campus_filter)
-        
-    if search:
-        id_digits = re.sub(r'^[A-Za-z]+[-_]?', '', search)
-        if id_digits.isdigit():
-            query += " AND (s.name LIKE ? OR s.father_name LIKE ? OR s.phone_number LIKE ? OR s.id = ? OR CAST(s.id AS TEXT) LIKE ?)"
-            params.extend([f"%{search}%", f"%{search}%", f"%{search}%", int(id_digits), f"%{search}%"])
-        else:
-            query += " AND (s.name LIKE ? OR s.father_name LIKE ? OR s.phone_number LIKE ? OR CAST(s.id AS TEXT) LIKE ?)"
-            params.extend([f"%{search}%", f"%{search}%", f"%{search}%", f"%{search}%"])
-        
-    if class_filter:
-        query += " AND s.class = ?"
-        params.append(class_filter)
-
-    if status_filter:
-        query += " AND s.status = ?"
-        params.append(status_filter)
+    where_sql, params = build_student_query_filters(
+        search=search,
+        class_filter=class_filter,
+        campus_filter=campus_filter,
+        status_filter=status_filter,
+        active_campus_id=active_campus_id
+    )
+    query += where_sql
         
     count_query = f"SELECT COUNT(*) FROM ({query})"
     total_students = conn.execute(count_query, params).fetchone()[0]
@@ -742,23 +960,96 @@ def student_add():
             return redirect(url_for('student_add'))
             
         conn = get_db_connection()
-        conn.execute('''
+        cur = conn.cursor()
+        cur.execute('''
             INSERT INTO students (name, father_name, phone_number, class, monthly_fee, annual_charges, opening_arrears, start_month, start_year, campus_id, status)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (name, father_name, phone_number, student_class, monthly_fee, annual_charges, opening_arrears, start_month, start_year, student_campus_id, status))
+        
+        student_id = cur.lastrowid
+        if not student_id:
+            latest = conn.execute("SELECT id FROM students WHERE name = ? AND campus_id = ? ORDER BY id DESC LIMIT 1", (name, student_campus_id)).fetchone()
+            if latest:
+                student_id = latest['id']
+                
+        # Process Optional Initial Collections / Payments at Admission
+        payment_date = request.form.get('payment_date', '').strip() or datetime.now().strftime('%Y-%m-%d')
+        collected_by = session.get('username', 'operator')
+        
+        books_amount = float(request.form.get('books_amount', 0) or 0)
+        admission_fee_amount = float(request.form.get('admission_fee_amount', 0) or 0)
+        first_month_amount = float(request.form.get('first_month_amount', 0) or 0)
+        other_amount = float(request.form.get('other_amount', 0) or 0)
+        
+        total_initial_paid = 0.0
+        initial_summaries = []
+        
+        if books_amount > 0 and student_id:
+            books_mode = request.form.get('books_mode', 'Voucher').strip()
+            books_receipt = request.form.get('books_receipt', '').strip()
+            books_notes = request.form.get('books_notes', '').strip() or 'Books / Syllabus Payment at Admission'
+            conn.execute('''
+                INSERT INTO fees (student_id, month, year, paid_amount, date_paid, payment_mode, reference_no, notes, collected_by, campus_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (student_id, 'Books', start_year, books_amount, payment_date, books_mode, books_receipt, books_notes, collected_by, student_campus_id))
+            total_initial_paid += books_amount
+            initial_summaries.append(f"Books: Rs. {books_amount:,.0f}")
+            
+        if admission_fee_amount > 0 and student_id:
+            admission_mode = request.form.get('admission_fee_mode', 'Voucher').strip()
+            admission_receipt = request.form.get('admission_fee_receipt', '').strip()
+            admission_notes = request.form.get('admission_fee_notes', '').strip() or 'Admission / Registration Fee'
+            conn.execute('''
+                INSERT INTO fees (student_id, month, year, paid_amount, date_paid, payment_mode, reference_no, notes, collected_by, campus_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (student_id, 'Admission Fee', start_year, admission_fee_amount, payment_date, admission_mode, admission_receipt, admission_notes, collected_by, student_campus_id))
+            total_initial_paid += admission_fee_amount
+            initial_summaries.append(f"Admission Fee: Rs. {admission_fee_amount:,.0f}")
+            
+        if first_month_amount > 0 and student_id:
+            first_m_name = request.form.get('first_month_name', '').strip() or MONTH_NUM_TO_NAME.get(start_month, 'March')
+            first_m_year = int(request.form.get('first_month_year', start_year))
+            first_m_mode = request.form.get('first_month_mode', 'Voucher').strip()
+            first_m_receipt = request.form.get('first_month_receipt', '').strip()
+            conn.execute('''
+                INSERT INTO fees (student_id, month, year, paid_amount, date_paid, payment_mode, reference_no, notes, collected_by, campus_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (student_id, first_m_name, first_m_year, first_month_amount, payment_date, first_m_mode, first_m_receipt, f'{first_m_name} {first_m_year} Tuition Fee', collected_by, student_campus_id))
+            total_initial_paid += first_month_amount
+            initial_summaries.append(f"Tuition ({first_m_name}): Rs. {first_month_amount:,.0f}")
+            
+        if other_amount > 0 and student_id:
+            other_title = request.form.get('other_title', '').strip() or 'Other Charges'
+            other_mode = request.form.get('other_mode', 'Voucher').strip()
+            other_receipt = request.form.get('other_receipt', '').strip()
+            other_notes = request.form.get('other_notes', '').strip() or f'{other_title} at Admission'
+            conn.execute('''
+                INSERT INTO fees (student_id, month, year, paid_amount, date_paid, payment_mode, reference_no, notes, collected_by, campus_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (student_id, other_title, start_year, other_amount, payment_date, other_mode, other_receipt, other_notes, collected_by, student_campus_id))
+            total_initial_paid += other_amount
+            initial_summaries.append(f"{other_title}: Rs. {other_amount:,.0f}")
+            
         conn.commit()
         conn.close()
         
-        flash(f'Student "{name}" enrolled successfully!', 'success')
+        if total_initial_paid > 0:
+            summary_str = " + ".join(initial_summaries)
+            flash(f'Student "{name}" (ID: #{student_id}) enrolled successfully! Initial collection of Rs. {total_initial_paid:,.0f} ({summary_str}) recorded.', 'success')
+        else:
+            flash(f'Student "{name}" (ID: #{student_id}) enrolled successfully!', 'success')
+            
         return redirect(url_for('students_view'))
         
     current_month_num = datetime.now().month
     current_year = datetime.now().year
+    current_date = datetime.now().strftime('%Y-%m-%d')
     
     return render_template('student_add.html', 
                            months=MONTH_NUM_TO_NAME,
                            current_month=current_month_num,
                            current_year=current_year,
+                           current_date=current_date,
                            active_campus_id=active_campus_id)
 
 @app.route('/students/edit/<int:id>', methods=['GET', 'POST'])
@@ -1285,42 +1576,81 @@ def fee_entry():
                         "UPDATE annual_charges_payments SET paid_amount = ?, date_paid = ?, payment_mode = ?, reference_no = ?, notes = ?, collected_by = ? WHERE id = ?",
                         (paid_amount, date_paid, payment_mode, reference_no, notes, collected_by, existing['id'])
                     )
-                    flash(f"Updated annual charges for {student_obj['name']} ({annual_year}): Rs. {paid_amount} via {payment_mode}", 'success')
+                    flash(f"Updated annual charges for {student_obj['name']} ({annual_year}): Rs. {paid_amount:,.0f} via {payment_mode}", 'success')
                 else:
                     conn.execute('''
                         INSERT INTO annual_charges_payments (student_id, year, paid_amount, date_paid, payment_mode, reference_no, notes, collected_by, campus_id)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ''', (student_id, annual_year, paid_amount, date_paid, payment_mode, reference_no, notes, collected_by, student_obj['campus_id']))
-                    flash(f"Recorded annual charges of Rs. {paid_amount} for {student_obj['name']} ({annual_year}) via {payment_mode}", 'success')
+                    flash(f"Recorded annual charges of Rs. {paid_amount:,.0f} for {student_obj['name']} ({annual_year}) via {payment_mode}", 'success')
+                conn.commit()
+                conn.close()
+                return redirect(url_for('fee_entry', student_id=student_id))
+
+            elif payment_type == 'books':
+                # --- Books / Syllabus Payment ---
+                item_year = int(request.form.get('year', datetime.now().year))
+                item_notes = notes or 'Books / Syllabus Payment'
+                conn.execute('''
+                    INSERT INTO fees (student_id, month, year, paid_amount, date_paid, payment_mode, reference_no, notes, collected_by, campus_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (student_id, 'Books', item_year, paid_amount, date_paid, payment_mode, reference_no, item_notes, collected_by, student_obj['campus_id']))
+                flash(f"Recorded books payment of Rs. {paid_amount:,.0f} for {student_obj['name']} ({item_year}) via {payment_mode}", 'success')
+                conn.commit()
+                conn.close()
+                return redirect(url_for('fee_entry', student_id=student_id))
+
+            elif payment_type == 'admission':
+                # --- Admission / Registration Fee ---
+                item_year = int(request.form.get('year', datetime.now().year))
+                item_notes = notes or 'Admission / Registration Fee'
+                conn.execute('''
+                    INSERT INTO fees (student_id, month, year, paid_amount, date_paid, payment_mode, reference_no, notes, collected_by, campus_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (student_id, 'Admission Fee', item_year, paid_amount, date_paid, payment_mode, reference_no, item_notes, collected_by, student_obj['campus_id']))
+                flash(f"Recorded admission fee of Rs. {paid_amount:,.0f} for {student_obj['name']} ({item_year}) via {payment_mode}", 'success')
+                conn.commit()
+                conn.close()
+                return redirect(url_for('fee_entry', student_id=student_id))
+
+            elif payment_type == 'other':
+                # --- Other Custom Fee ---
+                item_year = int(request.form.get('year', datetime.now().year))
+                custom_title = request.form.get('custom_title', '').strip() or 'Other Charges'
+                item_notes = notes or f'{custom_title} Payment'
+                conn.execute('''
+                    INSERT INTO fees (student_id, month, year, paid_amount, date_paid, payment_mode, reference_no, notes, collected_by, campus_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (student_id, custom_title, item_year, paid_amount, date_paid, payment_mode, reference_no, item_notes, collected_by, student_obj['campus_id']))
+                flash(f"Recorded {custom_title} of Rs. {paid_amount:,.0f} for {student_obj['name']} ({item_year}) via {payment_mode}", 'success')
                 conn.commit()
                 conn.close()
                 return redirect(url_for('fee_entry', student_id=student_id))
 
             else:
-                # --- Monthly Fee Payment ---
+                # --- Monthly Fee Payment (Multi-Month / Lumpsum Smart Allocation) ---
                 month = request.form['month']
                 year = int(request.form['year'])
+                num_months = int(request.form.get('months', 1) or 1)
                 
-                existing_payment = conn.execute(
-                    "SELECT id, paid_amount FROM fees WHERE student_id = ? AND month = ? AND year = ?",
-                    (student_id, month, year)
-                ).fetchone()
-                
-                if existing_payment:
-                    conn.execute(
-                        "UPDATE fees SET paid_amount = ?, date_paid = ?, payment_mode = ?, reference_no = ?, notes = ?, collected_by = ? WHERE id = ?",
-                        (paid_amount, date_paid, payment_mode, reference_no, notes, collected_by, existing_payment['id'])
-                    )
-                    flash(f"Updated fee record for {student_obj['name']} ({month} {year}): Rs. {paid_amount} via {payment_mode}", 'success')
-                else:
-                    conn.execute('''
-                        INSERT INTO fees (student_id, month, year, paid_amount, date_paid, payment_mode, reference_no, notes, collected_by, campus_id)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (student_id, month, year, paid_amount, date_paid, payment_mode, reference_no, notes, collected_by, student_obj['campus_id']))
-                    flash(f"Successfully recorded fee of Rs. {paid_amount} for {student_obj['name']} ({month} {year}) via {payment_mode}", 'success')
-                    
+                summaries = record_tuition_payment(
+                    conn=conn,
+                    student=student_obj,
+                    start_month_name=month,
+                    start_year=year,
+                    paid_amount=paid_amount,
+                    num_months=num_months,
+                    date_paid=date_paid,
+                    payment_mode=payment_mode,
+                    reference_no=reference_no,
+                    notes=notes,
+                    collected_by=collected_by
+                )
                 conn.commit()
                 conn.close()
+                
+                summary_text = " + ".join(summaries)
+                flash(f"Successfully recorded tuition fee for {student_obj['name']}: {summary_text} [Total Rs. {paid_amount:,.0f} via {payment_mode}]", 'success')
                 return redirect(url_for('fee_entry', student_id=student_id, month=month, year=year))
 
     return render_template('fee_entry.html', 
@@ -1496,27 +1826,24 @@ def fee_quick_collect():
         flash('Student not found or access denied.', 'danger')
         return redirect(url_for('class_fee_sheet', **{'class': selected_class, 'month': month, 'year': year}))
         
-    existing_payment = conn.execute(
-        "SELECT id, paid_amount FROM fees WHERE student_id = ? AND month = ? AND year = ?",
-        (student_id, month, year)
-    ).fetchone()
-    
-    if existing_payment:
-        conn.execute(
-            "UPDATE fees SET paid_amount = ?, date_paid = ?, payment_mode = ?, reference_no = ?, notes = ?, collected_by = ? WHERE id = ?",
-            (paid_amount, date_paid, payment_mode, reference_no, notes, collected_by, existing_payment['id'])
-        )
-        flash(f"Updated fee for {student['name']}: Rs. {paid_amount:,.0f} ({month} {year}) via {payment_mode} recorded successfully!", 'success')
-    else:
-        conn.execute('''
-            INSERT INTO fees (student_id, month, year, paid_amount, date_paid, payment_mode, reference_no, notes, collected_by, campus_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (student_id, month, year, paid_amount, date_paid, payment_mode, reference_no, notes, collected_by, student['campus_id']))
-        flash(f"Recorded fee payment of Rs. {paid_amount:,.0f} for {student['name']} ({month} {year}) via {payment_mode} successfully!", 'success')
-        
+    summaries = record_tuition_payment(
+        conn=conn,
+        student=student,
+        start_month_name=month,
+        start_year=year,
+        paid_amount=paid_amount,
+        num_months=1,
+        date_paid=date_paid,
+        payment_mode=payment_mode,
+        reference_no=reference_no,
+        notes=notes,
+        collected_by=collected_by
+    )
     conn.commit()
     conn.close()
     
+    summary_text = " + ".join(summaries)
+    flash(f"Recorded fee for {student['name']}: {summary_text} [Total Rs. {paid_amount:,.0f} via {payment_mode}] successfully!", 'success')
     return redirect(url_for('class_fee_sheet', **{'class': selected_class or student['class'], 'month': month, 'year': year}))
 
 @app.route('/fee/class-sheet/export')
@@ -1672,7 +1999,14 @@ def fee_history(student_id):
     opening_arrears = float(student['opening_arrears'] or 0.0) if 'opening_arrears' in student.keys() else 0.0
     total_monthly_billed = months_billed * (student['monthly_fee'] or 0)
     total_annual_billed = (student['annual_charges'] or 0) * max(1, (curr_year - start_y + 1))
-    total_billed = opening_arrears + total_monthly_billed + total_annual_billed
+    
+    # One-off non-tuition charges (e.g. Books, Admission Fee, Uniform, Other Charges)
+    non_tuition_billed = sum(
+        float(t['paid_amount'] or 0) for t in all_transactions 
+        if t.get('payment_type') != 'Annual Charges' and t.get('month') not in MONTH_NAME_TO_NUM
+    )
+    
+    total_billed = opening_arrears + total_monthly_billed + total_annual_billed + non_tuition_billed
     
     balance_due = total_billed - total_paid
     if balance_due < 0:
@@ -1786,8 +2120,8 @@ def voucher_print():
         if annual_charges <= 0:
             return 0.0
         paid_rec = conn.execute(
-            "SELECT SUM(paid_amount) FROM annual_charges_payments WHERE student_id = ? AND year = ? AND (notes IS NULL OR (notes NOT LIKE ? AND notes NOT LIKE ?))",
-            (student['id'], yr, '%Summer Pack%', '%SP%')
+            "SELECT SUM(paid_amount) FROM annual_charges_payments WHERE student_id = ? AND year = ? AND (notes IS NULL OR (LOWER(notes) NOT LIKE ? AND LOWER(notes) NOT LIKE ?))",
+            (student['id'], yr, '%summer pack%', '%sp%')
         ).fetchone()
         paid_annual = float(paid_rec[0] or 0.0) if paid_rec and paid_rec[0] is not None else 0.0
         return max(0.0, annual_charges - paid_annual)
@@ -1827,9 +2161,9 @@ def voucher_print():
             all_ac = conn.execute(
                 f"""SELECT student_id, SUM(paid_amount) 
                     FROM annual_charges_payments 
-                    WHERE student_id IN ({placeholders}) AND year = ? AND (notes IS NULL OR (notes NOT LIKE ? AND notes NOT LIKE ?))
+                    WHERE student_id IN ({placeholders}) AND year = ? AND (notes IS NULL OR (LOWER(notes) NOT LIKE ? AND LOWER(notes) NOT LIKE ?))
                     GROUP BY student_id""",
-                student_ids + [year, '%Summer Pack%', '%SP%']
+                student_ids + [year, '%summer pack%', '%sp%']
             ).fetchall()
             for r in all_ac:
                 ac_map[r[0]] = float(r[1] or 0.0)
@@ -2438,8 +2772,8 @@ def sos_view():
         params.append(class_filter)
         
     if search:
-        query += " AND (title LIKE ? OR description LIKE ?)"
-        params.extend([f"%{search}%", f"%{search}%"])
+        query += " AND (LOWER(title) LIKE ? OR LOWER(description) LIKE ?)"
+        params.extend([f"%{search.lower()}%", f"%{search.lower()}%"])
         
     query += " ORDER BY id DESC"
     materials = conn.execute(query, params).fetchall()

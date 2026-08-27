@@ -179,7 +179,7 @@
                     {% endfor %}
                 {% else %}
                     <tr>
-                        <td colspan="{% if session.role == 'admin' and not active_campus_id %}8{% else %}7{% endif %}" class="text-center text-secondary py-5">
+                        <td colspan="{% if session.role == 'admin' and not active_campus_id %}10{% else %}9{% endif %}" class="text-center text-secondary py-5">
                             <i class="fa-solid fa-users-slash d-block fs-3 mb-3 text-muted"></i>
                             No students matching the search criteria were found in the registry.
                         </td>

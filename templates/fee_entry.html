@@ -18,16 +18,36 @@
             
             <form action="{{ url_for('fee_entry') }}" method="POST" id="feeForm">
                 <div class="mb-4">
-                    <label class="form-label">Payment Type</label>
-                    <div class="d-flex gap-3">
+                    <label class="form-label">Payment Category / Type</label>
+                    <div class="d-flex flex-wrap gap-3">
                         <div class="form-check">
                             <input class="form-check-input" type="radio" name="payment_type" id="type_monthly" value="monthly" checked onchange="togglePaymentType()">
-                            <label class="form-check-label" for="type_monthly">Monthly Fee</label>
+                            <label class="form-check-label" for="type_monthly">Monthly Tuition</label>
                         </div>
                         <div class="form-check">
                             <input class="form-check-input" type="radio" name="payment_type" id="type_annual" value="annual" onchange="togglePaymentType()">
                             <label class="form-check-label" for="type_annual">Annual Charges</label>
                         </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="payment_type" id="type_books" value="books" onchange="togglePaymentType()">
+                            <label class="form-check-label text-warning fw-semibold" for="type_books"><i class="fa-solid fa-book me-1"></i>Books / Syllabus</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="payment_type" id="type_admission" value="admission" onchange="togglePaymentType()">
+                            <label class="form-check-label text-info fw-semibold" for="type_admission"><i class="fa-solid fa-id-card me-1"></i>Admission Fee</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="payment_type" id="type_other" value="other" onchange="togglePaymentType()">
+                            <label class="form-check-label text-light" for="type_other"><i class="fa-solid fa-shirt me-1"></i>Other Custom Fee</label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Custom Charge Title (shown for other payment type) -->
+                <div class="row g-3 mb-4" id="custom_charge_options" style="display: none;">
+                    <div class="col-md-12">
+                        <label for="custom_title" class="form-label">Charge Description / Title <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="custom_title" name="custom_title" placeholder="e.g. Uniform Charges, Prospectus, ID Card, Examination Fee">
                     </div>
                 </div>
 
@@ -44,8 +64,8 @@
                     <input type="hidden" id="months_input" name="months_input">
                     <input type="hidden" id="end_month_input" name="end_month_input">
                 </div>
-                <div class="row g-3 mb-4">
-                    <div class="col-md-6">
+                <div class="row g-3 mb-4" id="month_year_selection">
+                    <div class="col-md-6" id="month_col">
                         <label for="month" class="form-label">Billing Month</label>
                         <select class="form-select" id="month" name="month">
                             {% for m_num, m_name in months.items() %}
@@ -53,8 +73,8 @@
                             {% endfor %}
                         </select>
                     </div>
-                    <div class="col-md-6">
-                        <label for="year" class="form-label">Billing Year</label>
+                    <div class="col-md-6" id="year_col">
+                        <label for="year" class="form-label">Billing / Payment Year</label>
                         <select class="form-select" id="year" name="year">
                             {% for y in years %}
                             <option value="{{ y }}" {% if y == target_year %}selected{% endif %}>{{ y }}</option>
@@ -100,12 +120,27 @@
 
                 {% if selected_student %}
                 <div class="mb-3">
-                    <label for="paid_amount" class="form-label">Paid Amount (Rs.) <span class="text-danger">*</span></label>
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <label for="paid_amount" class="form-label mb-0">Paid Amount (Rs.) <span class="text-danger">*</span></label>
+                        <!-- Quick Multi-Month Selection Buttons -->
+                        <div class="btn-group btn-group-sm" role="group" id="quick_month_btns">
+                            <button type="button" class="btn btn-outline-info btn-xs py-0 px-2" onclick="setMonthsToPay(1)">1 Month</button>
+                            <button type="button" class="btn btn-outline-info btn-xs py-0 px-2" onclick="setMonthsToPay(2)">2 Months</button>
+                            <button type="button" class="btn btn-outline-info btn-xs py-0 px-2" onclick="setMonthsToPay(3)">3 Months</button>
+                            {% if arrears_info and arrears_info.arrears > 0 %}
+                            <button type="button" class="btn btn-outline-warning btn-xs py-0 px-2" onclick="setFullPayable()">Clear Dues (Rs. {{ arrears_info.total_payable|round|int }})</button>
+                            {% endif %}
+                        </div>
+                    </div>
                     <div class="input-group">
                         <span class="input-group-text bg-transparent border-end-0 border-light-subtle text-secondary" style="border: 1px solid var(--glass-border);">Rs.</span>
-                        <input type="number" step="any" class="form-control border-start-0" id="paid_amount" name="paid_amount" placeholder="Enter amount paid" value="{{ arrears_info.total_payable if arrears_info else '' }}" required>
+                        <input type="number" step="any" class="form-control border-start-0" id="paid_amount" name="paid_amount" placeholder="Enter amount paid" value="{{ arrears_info.total_payable if arrears_info else '' }}" required oninput="previewDistribution()">
                     </div>
                     <div class="form-text text-secondary small" id="amount_hint">Defaults to total payable amount (Rs. {{ arrears_info.total_payable if arrears_info else 0 }}).</div>
+                    <!-- Live Multi-Month Distribution Banner -->
+                    <div class="mt-2 p-2 rounded bg-info bg-opacity-10 border border-info border-opacity-25 small text-info" id="distribution_preview" style="display: none;">
+                        <i class="fa-solid fa-calendar-check me-1"></i> <span id="distribution_text"></span>
+                    </div>
                 </div>
 
                 <!-- Payment Method / Mode Selector -->
@@ -272,10 +307,12 @@
         // Reload details when student selection changes
         select.addEventListener('change', reloadWithParams);
         
-        // Compute end month when months or month changes
+        // Compute end month and amount when months or month changes
         const monthsInput = document.getElementById('months');
         const endMonthInput = document.getElementById('end_month');
+        
         function updateEndMonth() {
+            if (!monthsInput) return;
             const startMonth = monthSelect.value;
             const monthsCount = parseInt(monthsInput.value) || 1;
             const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -287,10 +324,24 @@
             } else {
                 endMonthInput.value = '';
             }
+            previewDistribution();
         }
-        monthsInput.addEventListener('change', updateEndMonth);
+        
+        if (monthsInput) {
+            monthsInput.addEventListener('input', function() {
+                updateEndMonth();
+                const monthlyFee = parseFloat("{{ selected_student.monthly_fee if selected_student else 0 }}") || 0;
+                const count = parseInt(monthsInput.value) || 1;
+                const arrears = parseFloat("{{ arrears_info.arrears if arrears_info else 0 }}") || 0;
+                const paidAmtInput = document.getElementById('paid_amount');
+                if (paidAmtInput && monthlyFee > 0) {
+                    paidAmtInput.value = (monthlyFee * count) + arrears;
+                }
+                previewDistribution();
+            });
+        }
+        
         monthSelect.addEventListener('change', updateEndMonth);
-        // Initialize on load
         updateEndMonth();
 
         // Reload when month/year change (for annual charges too)
@@ -298,16 +349,134 @@
         monthSelect.addEventListener('change', reloadWithParams);
     });
 
+    function setMonthsToPay(count) {
+        const monthsInput = document.getElementById('months');
+        const paidAmtInput = document.getElementById('paid_amount');
+        const monthlyFee = parseFloat("{{ selected_student.monthly_fee if selected_student else 0 }}") || 0;
+        const arrears = parseFloat("{{ arrears_info.arrears if arrears_info else 0 }}") || 0;
+        
+        if (monthsInput) {
+            monthsInput.value = count;
+        }
+        if (paidAmtInput && monthlyFee > 0) {
+            paidAmtInput.value = (monthlyFee * count) + arrears;
+        }
+        
+        const monthSelect = document.getElementById('month');
+        const endMonthInput = document.getElementById('end_month');
+        if (monthSelect && endMonthInput) {
+            const startMonth = monthSelect.value;
+            const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+            const startIdx = monthNames.findIndex(m => m.toLowerCase() === startMonth.toLowerCase());
+            if (startIdx >= 0) {
+                const endIdx = (startIdx + count - 1) % 12;
+                endMonthInput.value = monthNames[endIdx];
+            }
+        }
+        previewDistribution();
+    }
+
+    function setFullPayable() {
+        const totalPayable = parseFloat("{{ arrears_info.total_payable if arrears_info else 0 }}") || 0;
+        const paidAmtInput = document.getElementById('paid_amount');
+        if (paidAmtInput) {
+            paidAmtInput.value = totalPayable;
+        }
+        previewDistribution();
+    }
+
+    function previewDistribution() {
+        const previewBox = document.getElementById('distribution_preview');
+        const previewText = document.getElementById('distribution_text');
+        if (!previewBox || !previewText) return;
+        
+        const isMonthly = document.getElementById('type_monthly')?.checked;
+        if (!isMonthly) {
+            previewBox.style.display = 'none';
+            return;
+        }
+        
+        const paidAmt = parseFloat(document.getElementById('paid_amount')?.value) || 0;
+        const monthlyFee = parseFloat("{{ selected_student.monthly_fee if selected_student else 0 }}") || 0;
+        const monthsInput = document.getElementById('months');
+        const numMonths = parseInt(monthsInput?.value) || 1;
+        const startMonth = document.getElementById('month')?.value || 'August';
+        const startYear = parseInt(document.getElementById('year')?.value) || 2026;
+        
+        if (monthlyFee <= 0) {
+            previewBox.style.display = 'none';
+            return;
+        }
+        
+        const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+        let startIdx = monthNames.findIndex(m => m.toLowerCase() === startMonth.toLowerCase());
+        if (startIdx < 0) startIdx = 0;
+        
+        let calculatedMonths = numMonths > 1 ? numMonths : Math.max(1, Math.round(paidAmt / monthlyFee));
+        
+        if (calculatedMonths > 1 || paidAmt >= monthlyFee * 1.5) {
+            const parts = [];
+            let rem = paidAmt;
+            for (let i = 0; i < calculatedMonths; i++) {
+                let mIdx = (startIdx + i) % 12;
+                let mYear = startYear + Math.floor((startIdx + i) / 12);
+                let mName = monthNames[mIdx];
+                let isLast = (i === calculatedMonths - 1);
+                let alloc = isLast ? rem : Math.min(monthlyFee, rem);
+                rem -= alloc;
+                parts.push(`${mName} ${mYear} (Rs. ${Math.round(alloc).toLocaleString()})`);
+            }
+            previewText.textContent = `Smart Multi-Month Allocation: ${parts.join(' + ')} = Total Rs. ${Math.round(paidAmt).toLocaleString()}`;
+            previewBox.style.display = 'block';
+        } else {
+            previewBox.style.display = 'none';
+        }
+    }
+
     function togglePaymentType() {
+        const isMonthly = document.getElementById('type_monthly').checked;
         const isAnnual = document.getElementById('type_annual').checked;
-        document.getElementById('monthly_fee_options').style.display = isAnnual ? 'none' : '';
+        const isBooks = document.getElementById('type_books').checked;
+        const isAdmission = document.getElementById('type_admission').checked;
+        const isOther = document.getElementById('type_other').checked;
+        
+        document.getElementById('monthly_fee_options').style.display = isMonthly ? '' : 'none';
         document.getElementById('annual_fee_options').style.display = isAnnual ? '' : 'none';
+        document.getElementById('custom_charge_options').style.display = isOther ? '' : 'none';
+        
+        const quickBtns = document.getElementById('quick_month_btns');
+        if (quickBtns) {
+            quickBtns.style.display = isMonthly ? '' : 'none';
+        }
+        
+        // Month column is only needed for monthly tuition
+        const monthCol = document.getElementById('month_col');
+        if (monthCol) {
+            monthCol.style.display = isMonthly ? '' : 'none';
+        }
+        
+        // Year selection row visibility (not needed for annual because annual has its own year selector)
+        const monthYearRow = document.getElementById('month_year_selection');
+        if (monthYearRow) {
+            monthYearRow.style.display = isAnnual ? 'none' : '';
+        }
+        
+        previewDistribution();
+        
         // Update hint text
         const hint = document.getElementById('amount_hint');
-        if (isAnnual) {
-            hint.textContent = 'Enter the annual charges amount being paid.';
-        } else {
-            hint.textContent = 'Defaults to total payable amount.';
+        if (hint) {
+            if (isAnnual) {
+                hint.textContent = 'Enter the annual charges amount being paid.';
+            } else if (isBooks) {
+                hint.textContent = 'Enter the books / syllabus payment amount (Rs.).';
+            } else if (isAdmission) {
+                hint.textContent = 'Enter the admission / registration fee amount (Rs.).';
+            } else if (isOther) {
+                hint.textContent = 'Enter the custom fee amount (Rs.) and title above.';
+            } else {
+                hint.textContent = 'Defaults to total payable monthly amount.';
+            }
         }
     }
 
