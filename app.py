@@ -1298,24 +1298,6 @@ CLASS_PROMOTION_MAP = {
 def students_promotion():
     active_campus_id = get_active_campus_id()
     conn = get_db_connection()
-
-    # Ensure promotion_history table exists
-    conn.execute('''
-        CREATE TABLE IF NOT EXISTS promotion_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            student_id INTEGER NOT NULL,
-            student_name TEXT NOT NULL,
-            from_class TEXT NOT NULL,
-            to_class TEXT NOT NULL,
-            previous_fee REAL NOT NULL,
-            new_fee REAL NOT NULL,
-            new_start_month INTEGER NOT NULL,
-            new_start_year INTEGER NOT NULL,
-            promoted_by_user TEXT NOT NULL,
-            promoted_at TEXT NOT NULL,
-            campus_id INTEGER REFERENCES campuses(id)
-        )
-    ''')
     
     if request.method == 'POST':
         source_class = request.form.get('source_class', '').strip()
