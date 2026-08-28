@@ -2636,12 +2636,15 @@ def voucher_print():
 
     if generate_class:
         # Fetch all students belonging to the selected class (and campus if filtered)
-        query = "SELECT * FROM students WHERE class = ? AND (status IS NULL OR status = 'active')"
+        query = """SELECT s.*, c.name as campus_name, c.code as campus_code 
+                   FROM students s 
+                   LEFT JOIN campuses c ON s.campus_id = c.id 
+                   WHERE s.class = ? AND (s.status IS NULL OR s.status = 'active')"""
         params = [selected_class]
         if active_campus_id:
-            query += " AND campus_id = ?"
+            query += " AND s.campus_id = ?"
             params.append(active_campus_id)
-        query += " ORDER BY id ASC"
+        query += " ORDER BY s.id ASC"
         students = conn.execute(query, params).fetchall()
 
         if not students:
@@ -2697,6 +2700,11 @@ def voucher_print():
         for student in students:
             sid = student['id']
             settings = settings_cache.get(student['campus_id'], default_settings)
+            
+            # Check if student belongs to Main Campus
+            campus_code = (student['campus_code'] or '').strip().lower() if 'campus_code' in student.keys() and student['campus_code'] else ''
+            campus_name = (student['campus_name'] or '').strip().lower() if 'campus_name' in student.keys() and student['campus_name'] else ''
+            is_main_campus = bool(campus_code == 'main_campus' or 'main' in campus_name or not student['campus_id'])
             
             # Pass pre-fetched fees to avoid any db calls
             fee_details = get_student_fee_details(student, month, year, payments=fees_map.get(sid, []))
@@ -2767,6 +2775,7 @@ def voucher_print():
                 'school_name': settings.get('school_name', 'Alliedian School Al-Rehman Campus, Okara'),
                 'bank_name': settings.get('bank_name', 'MCB Bank Limited'),
                 'student': student,
+                'is_main_campus': is_main_campus,
                 'paid_this_month': fee_details['paid_this_month'],
                 'month': month,
                 'end_month': end_month,
@@ -2793,13 +2802,21 @@ def voucher_print():
             conn.close()
             flash('Invalid parameters for voucher generation.', 'danger')
             return redirect(url_for('voucher_generate'))
-        student = conn.execute("SELECT * FROM students WHERE id = ?", (student_id,)).fetchone()
+        student = conn.execute("""SELECT s.*, c.name as campus_name, c.code as campus_code 
+                                  FROM students s 
+                                  LEFT JOIN campuses c ON s.campus_id = c.id 
+                                  WHERE s.id = ?""", (student_id,)).fetchone()
         if not student or (active_campus_id and student['campus_id'] != active_campus_id):
             conn.close()
             flash('Student not found or access denied.', 'danger')
             return redirect(url_for('voucher_generate'))
         settings = get_campus_settings(student['campus_id'])
         fee_details = get_student_fee_details(student, month, year)
+        
+        # Check if student belongs to Main Campus
+        campus_code = (student['campus_code'] or '').strip().lower() if 'campus_code' in student.keys() and student['campus_code'] else ''
+        campus_name = (student['campus_name'] or '').strip().lower() if 'campus_name' in student.keys() and student['campus_name'] else ''
+        is_main_campus = bool(campus_code == 'main_campus' or 'main' in campus_name or not student['campus_id'])
         
         # Distribute paid_this_month across arrears and generated months
         available_paid = fee_details['paid_this_month']
@@ -2860,6 +2877,7 @@ def voucher_print():
             'school_name': settings.get('school_name', 'Alliedian School Al-Rehman Campus, Okara'),
             'bank_name': settings.get('bank_name', 'MCB Bank Limited'),
             'student': student,
+            'is_main_campus': is_main_campus,
             'month': month,
             'end_month': end_month,
             'months': num_months,

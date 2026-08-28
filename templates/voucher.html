@@ -215,24 +215,28 @@
                     
                     <!-- Bank & Online Accounts Section (At Top) -->
                     <div class="v-bank-section">
-                        <p class="v-bank-title">Bank &amp; Online Accounts:</p>
+                        <p class="v-bank-title">{% if data.is_main_campus %}Bank &amp; Online Accounts:{% else %}Bank Accounts:{% endif %}</p>
                         <div class="v-bank-grid">
                             <div class="v-bank-row">
                                 <span class="v-bank-logo">HBL:</span>
                                 <span class="v-bank-acc">0018307900667103</span>
                             </div>
+                            {% if data.is_main_campus %}
                             <div class="v-bank-row">
                                 <span class="v-bank-logo">EasyPaisa:</span>
                                 <span class="v-bank-acc">0333-4537875</span>
                             </div>
+                            {% endif %}
                             <div class="v-bank-row">
                                 <span class="v-bank-logo">BOP:</span>
                                 <span class="v-bank-acc">6020168366800013</span>
                             </div>
+                            {% if data.is_main_campus %}
                             <div class="v-bank-row">
                                 <span class="v-bank-logo">JazzCash:</span>
                                 <span class="v-bank-acc">0333-4537875</span>
                             </div>
+                            {% endif %}
                             <div class="v-bank-row" style="grid-column: span 2;">
                                 <span class="v-bank-logo">Bank Alfalah:</span>
                                 <span class="v-bank-acc">0434001006662966</span>
@@ -313,7 +317,7 @@
                     <div class="v-note-section">
                         <p style="font-weight: bold; font-family: 'Times New Roman', Times, serif;">Note:-</p>
                         <p>-&gt;The fee be deposited in the</p>
-                        <p style="margin-left: 15px;">Designated Bank / Online Accounts.</p>
+                        <p style="margin-left: 15px;">{% if data.is_main_campus %}Designated Bank / Online Accounts.{% else %}Designated Bank Accounts.{% endif %}</p>
                         <p>-&gt;The challan must be deposited within due</p>
                         <p style="margin-left: 15px;">date to avoid late payment charges.</p>
                         <p class="v-note-bold">-&gt; New challan issuance charges Rs:10/.</p>
