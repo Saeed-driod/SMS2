@@ -1501,23 +1501,34 @@ def fee_entry():
     active_campus_id = get_active_campus_id()
     conn = get_db_connection()
     
-    student_query = "SELECT id, name, father_name, class, monthly_fee, campus_id FROM students"
-    student_params = []
+    target_month = request.args.get('month', MONTH_NUM_TO_NAME[datetime.now().month])
+    target_year = request.args.get('year', datetime.now().year, type=int)
+    
+    student_query = """
+        SELECT s.id, s.name, s.father_name, s.class, s.monthly_fee, s.campus_id, s.annual_charges,
+               COALESCE((SELECT SUM(p.paid_amount) 
+                         FROM annual_charges_payments p 
+                         WHERE p.student_id = s.id AND p.year = ? 
+                           AND (p.notes IS NULL OR (LOWER(p.notes) NOT LIKE ? AND LOWER(p.notes) NOT LIKE ?))), 0) as paid_ac
+        FROM students s
+    """
+    student_params = [target_year, '%summer pack%', '%sp%']
     if active_campus_id:
-        student_query += " WHERE campus_id = ?"
-        student_params = [active_campus_id]
-    student_query += " ORDER BY class, name"
+        student_query += " WHERE s.campus_id = ?"
+        student_params.append(active_campus_id)
+    student_query += " ORDER BY s.class, s.name"
     
-    students_list = conn.execute(student_query, student_params).fetchall()
-    
+    raw_students = conn.execute(student_query, student_params).fetchall()
+    students_list = [dict(r) for r in raw_students]
+    for s in students_list:
+        s['unpaid_ac'] = max(0.0, float(s['annual_charges'] or 0.0) - float(s['paid_ac'] or 0.0))
+        
     selected_student_id = request.args.get('student_id', '', type=int)
     selected_student = None
     arrears_info = None
     
-    target_month = request.args.get('month', MONTH_NUM_TO_NAME[datetime.now().month])
-    target_year = request.args.get('year', datetime.now().year, type=int)
-    
     annual_info = None
+
     if selected_student_id:
         selected_student = conn.execute("SELECT * FROM students WHERE id = ?", (selected_student_id,)).fetchone()
         if selected_student and active_campus_id and selected_student['campus_id'] != active_campus_id:
@@ -1760,6 +1771,7 @@ def class_fee_sheet():
     sheet_data = []
     total_class_monthly_fee = 0.0
     total_class_arrears = 0.0
+    total_class_unpaid_ac = 0.0
     total_class_payable = 0.0
     total_class_paid = 0.0
     total_class_remaining = 0.0
@@ -1783,6 +1795,7 @@ def class_fee_sheet():
         
         student_ids = [s['id'] for s in students]
         fees_map = {sid: [] for sid in student_ids}
+        ac_map = {sid: 0.0 for sid in student_ids}
         if student_ids:
             placeholders = ','.join(['?'] * len(student_ids))
             all_fees = conn.execute(
@@ -1792,13 +1805,27 @@ def class_fee_sheet():
             for f in all_fees:
                 fees_map[f['student_id']].append(f)
                 
+            all_ac_payments = conn.execute(
+                f"SELECT student_id, SUM(paid_amount) as total_paid FROM annual_charges_payments WHERE student_id IN ({placeholders}) AND year = ? AND (notes IS NULL OR (LOWER(notes) NOT LIKE ? AND LOWER(notes) NOT LIKE ?)) GROUP BY student_id",
+                student_ids + [target_year, '%summer pack%', '%sp%']
+            ).fetchall()
+            for ac in all_ac_payments:
+                ac_map[ac['student_id']] = float(ac['total_paid'] or 0.0)
+                
         for s in students:
             details = get_student_fee_details(s, target_month, target_year, payments=fees_map.get(s['id'], []))
             monthly_fee = details['monthly_fee']
             arrears = details['arrears']
-            total_payable = details['total_payable']
+            
+            # Annual charges info
+            ann_charges = float(s['annual_charges'] or 0.0) if 'annual_charges' in s.keys() else 0.0
+            paid_ac = ac_map.get(s['id'], 0.0)
+            unpaid_ac = max(0.0, ann_charges - paid_ac)
+            
+            remaining_tuition = details['remaining_payable']
+            total_payable = details['total_payable'] + unpaid_ac
+            remaining = remaining_tuition + unpaid_ac
             paid = details['paid_this_month']
-            remaining = details['remaining_payable']
             
             if remaining <= 0 and (paid > 0 or total_payable == 0):
                 status = 'Paid'
@@ -1821,17 +1848,20 @@ def class_fee_sheet():
                 'class': s['class'],
                 'campus_name': s['campus_name'],
                 'monthly_fee': monthly_fee,
-                'annual_charges': float(s['annual_charges'] or 0) if 'annual_charges' in s.keys() else 0.0,
+                'annual_charges': ann_charges,
+                'unpaid_ac': unpaid_ac,
                 'arrears': arrears,
                 'total_payable': total_payable,
                 'paid': paid,
                 'remaining': remaining,
+                'remaining_tuition': remaining_tuition,
                 'status': status,
                 'status_badge': status_badge
             })
             
             total_class_monthly_fee += monthly_fee
             total_class_arrears += arrears
+            total_class_unpaid_ac += unpaid_ac
             total_class_payable += total_payable
             total_class_paid += paid
             total_class_remaining += remaining
@@ -1853,6 +1883,7 @@ def class_fee_sheet():
                            total_students=len(sheet_data),
                            total_class_monthly_fee=total_class_monthly_fee,
                            total_class_arrears=total_class_arrears,
+                           total_class_unpaid_ac=total_class_unpaid_ac,
                            total_class_payable=total_class_payable,
                            total_class_paid=total_class_paid,
                            total_class_remaining=total_class_remaining,
@@ -1991,6 +2022,7 @@ def export_class_fee_sheet():
     
     student_ids = [s['id'] for s in students]
     fees_map = {sid: [] for sid in student_ids}
+    ac_map = {sid: 0.0 for sid in student_ids}
     if student_ids:
         placeholders = ','.join(['?'] * len(student_ids))
         all_fees = conn.execute(
@@ -2000,14 +2032,27 @@ def export_class_fee_sheet():
         for f in all_fees:
             fees_map[f['student_id']].append(f)
             
+        all_ac_payments = conn.execute(
+            f"SELECT student_id, SUM(paid_amount) as total_paid FROM annual_charges_payments WHERE student_id IN ({placeholders}) AND year = ? AND (notes IS NULL OR (LOWER(notes) NOT LIKE ? AND LOWER(notes) NOT LIKE ?)) GROUP BY student_id",
+            student_ids + [target_year, '%summer pack%', '%sp%']
+        ).fetchall()
+        for ac in all_ac_payments:
+            ac_map[ac['student_id']] = float(ac['total_paid'] or 0.0)
+            
     conn.close()
     
     rows = []
     for s in students:
         details = get_student_fee_details(s, target_month, target_year, payments=fees_map.get(s['id'], []))
+        ann_charges = float(s['annual_charges'] or 0.0) if 'annual_charges' in s.keys() else 0.0
+        paid_ac = ac_map.get(s['id'], 0.0)
+        unpaid_ac = max(0.0, ann_charges - paid_ac)
+        
         paid = details['paid_this_month']
-        rem = details['remaining_payable']
-        status = 'Paid' if (rem <= 0 and (paid > 0 or details['total_payable'] == 0)) else ('Partial' if (paid > 0 and rem > 0) else 'Unpaid')
+        rem = details['remaining_payable'] + unpaid_ac
+        total_payable = details['total_payable'] + unpaid_ac
+        status = 'Paid' if (rem <= 0 and (paid > 0 or total_payable == 0)) else ('Partial' if (paid > 0 and rem > 0) else 'Unpaid')
+        
         rows.append({
             'Roll / ID': s['id'],
             'Student Name': s['name'],
@@ -2017,7 +2062,8 @@ def export_class_fee_sheet():
             'Billing Month': f"{target_month} {target_year}",
             'Monthly Tuition Fee (Rs.)': details['monthly_fee'],
             'Previous Arrears (Rs.)': details['arrears'],
-            'Total Payable (Rs.)': details['total_payable'],
+            'AC Due (Rs.)': unpaid_ac,
+            'Total Payable (Rs.)': total_payable,
             'Paid Amount (Rs.)': paid,
             'Remaining Balance (Rs.)': rem,
             'Payment Status': status
@@ -2026,7 +2072,7 @@ def export_class_fee_sheet():
     df = pd.DataFrame(rows) if rows else pd.DataFrame(columns=[
         'Roll / ID', 'Student Name', 'Father Name', 'Phone / WhatsApp', 'Class',
         'Billing Month', 'Monthly Tuition Fee (Rs.)', 'Previous Arrears (Rs.)',
-        'Total Payable (Rs.)', 'Paid Amount (Rs.)', 'Remaining Balance (Rs.)', 'Payment Status'
+        'AC Due (Rs.)', 'Total Payable (Rs.)', 'Paid Amount (Rs.)', 'Remaining Balance (Rs.)', 'Payment Status'
     ])
     
     output = io.BytesIO()

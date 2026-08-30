@@ -186,6 +186,7 @@
                     <th>Phone / WhatsApp</th>
                     <th class="text-end">Monthly Fee</th>
                     <th class="text-end">Arrears</th>
+                    <th class="text-end text-warning">AC Due</th>
                     <th class="text-end text-info font-weight-bold">Total Payable</th>
                     <th class="text-end text-success">Paid Amount</th>
                     <th class="text-end text-danger">Balance Due</th>
@@ -242,6 +243,11 @@
                             Rs. {{ "{:,.0f}".format(row.arrears) }}
                         </td>
                         
+                        <!-- AC Due -->
+                        <td class="text-end font-monospace {% if row.unpaid_ac > 0 %}text-warning fw-bold{% else %}text-muted{% endif %}">
+                            Rs. {{ "{:,.0f}".format(row.unpaid_ac) }}
+                        </td>
+                        
                         <!-- Total Payable -->
                         <td class="text-end font-monospace fw-bold text-white bg-dark bg-opacity-25">
                             Rs. {{ "{:,.0f}".format(row.total_payable) }}
@@ -279,7 +285,7 @@
                             <div class="d-flex justify-content-center gap-1">
                                 <button type="button" 
                                         class="btn btn-sm {% if row.remaining <= 0 %}btn-outline-success{% else %}btn-primary{% endif %} px-2 py-1 d-inline-flex align-items-center gap-1"
-                                        onclick="openQuickCollectModal({{ row.id }}, '{{ row.name|replace("'", "\\'") }}', '{{ row.father_name|replace("'", "\\'") }}', '{{ row.class }}', {{ row.total_payable }}, {{ row.paid }}, {{ row.remaining }}, {{ row.monthly_fee }}, {{ row.annual_charges or 0 }})"
+                                        onclick="openQuickCollectModal({{ row.id }}, '{{ row.name|replace("'", "\\'") }}', '{{ row.father_name|replace("'", "\\'") }}', '{{ row.class }}', {{ row.total_payable }}, {{ row.paid }}, {{ row.remaining_tuition }}, {{ row.monthly_fee }}, {{ row.unpaid_ac }})"
                                         title="{% if row.remaining <= 0 %}Update Payment{% else %}Collect Fee Record{% endif %}">
                                     <i class="fa-solid fa-receipt"></i>
                                     <span>{% if row.remaining <= 0 %}Edit{% else %}Collect{% endif %}</span>
@@ -294,19 +300,19 @@
                     {% endfor %}
                 {% else %}
                     <tr>
-                        <td colspan="11" class="text-center py-5 text-secondary">
+                        <td colspan="12" class="text-center py-5 text-secondary">
                             <i class="fa-solid fa-folder-open mb-2" style="font-size: 2.5rem; opacity: 0.4;"></i>
                             <p class="mb-0">No active students found in <strong>Class {{ selected_class }}</strong>.</p>
                         </td>
                     </tr>
                 {% endif %}
             </tbody>
-            <!-- Table Footer Total Summary -->
             <tfoot style="position: sticky; bottom: 0; z-index: 10; background: #0f1424; font-weight: 750; border-top: 2px solid rgba(255, 255, 255, 0.15);">
                 <tr>
                     <td colspan="4" class="text-uppercase text-secondary ps-3">Class Total ({{ total_students }} Students)</td>
                     <td class="text-end font-monospace text-secondary">Rs. {{ "{:,.0f}".format(total_class_monthly_fee) }}</td>
                     <td class="text-end font-monospace text-warning">Rs. {{ "{:,.0f}".format(total_class_arrears) }}</td>
+                    <td class="text-end font-monospace text-warning">Rs. {{ "{:,.0f}".format(total_class_unpaid_ac) }}</td>
                     <td class="text-end font-monospace text-white bg-dark bg-opacity-50">Rs. {{ "{:,.0f}".format(total_class_payable) }}</td>
                     <td class="text-end font-monospace text-success">Rs. {{ "{:,.0f}".format(total_class_paid) }}</td>
                     <td class="text-end font-monospace text-danger">Rs. {{ "{:,.0f}".format(total_class_remaining) }}</td>
@@ -566,7 +572,7 @@ function clearTuitionAmount() {
 }
 
 function fillStudentAnnual() {
-    document.getElementById('modal_annual_amount').value = currentModalAnnual > 0 ? currentModalAnnual : 1000;
+    document.getElementById('modal_annual_amount').value = currentModalAnnual > 0 ? currentModalAnnual : 2200;
     calcModalGrandTotal();
 }
 

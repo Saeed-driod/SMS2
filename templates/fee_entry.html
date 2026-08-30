@@ -112,6 +112,8 @@
                             data-name="{{ s.name }}" 
                             data-father="{{ s.father_name }}" 
                             data-class="{{ s.class }}"
+                            data-ac="{{ s.annual_charges }}"
+                            data-unpaid-ac="{{ s.unpaid_ac }}"
                             {% if s.id == selected_student_id %}selected{% endif %}>
                         {{ s.name }} (Father: {{ s.father_name }}, Class: {{ s.class }}, ID: {{ s.id }})
                     </option>

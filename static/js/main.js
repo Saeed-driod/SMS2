@@ -35,6 +35,8 @@ function initStudentSearch(inputId, listId, selectId) {
                 name: option.getAttribute('data-name') || option.text,
                 father: option.getAttribute('data-father') || '',
                 class: option.getAttribute('data-class') || '',
+                ac: option.getAttribute('data-ac') || '0',
+                unpaid_ac: option.getAttribute('data-unpaid-ac') || '0',
                 barcode: 'STD-' + option.value.toString()
             });
         }
@@ -140,9 +142,21 @@ function initStudentSearch(inputId, listId, selectId) {
         list.forEach(student => {
             const div = document.createElement('div');
             div.className = 'suggestion-item';
+            
+            let ac_badge = '';
+            const ac_val = parseFloat(student.ac) || 0;
+            const unpaid_ac_val = parseFloat(student.unpaid_ac) || 0;
+            if (ac_val > 0) {
+                if (unpaid_ac_val <= 0) {
+                    ac_badge = ' &bull; <span class="badge bg-success bg-opacity-20 text-success border border-success border-opacity-30 py-0.5 px-1.5 small" style="font-size: 0.65rem;">AC Paid</span>';
+                } else {
+                    ac_badge = ' &bull; <span class="badge bg-warning bg-opacity-20 text-warning border border-warning border-opacity-30 py-0.5 px-1.5 small" style="font-size: 0.65rem;">AC Unpaid: Rs. ' + Math.round(unpaid_ac_val).toLocaleString() + '</span>';
+                }
+            }
+            
             div.innerHTML = `
                 <div class="fw-bold">${student.name} <span class="badge badge-class float-end">${student.class}</span></div>
-                <div class="text-secondary small">Father: ${student.father} &bull; <span class="badge bg-dark border border-secondary text-info font-monospace" style="font-size: 0.7rem;"><i class="fa-solid fa-barcode me-1"></i>STD-${student.id}</span></div>
+                <div class="text-secondary small">Father: ${student.father} &bull; <span class="badge bg-dark border border-secondary text-info font-monospace" style="font-size: 0.7rem;"><i class="fa-solid fa-barcode me-1"></i>STD-${student.id}</span>${ac_badge}</div>
             `;
             
             div.addEventListener('click', function() {
