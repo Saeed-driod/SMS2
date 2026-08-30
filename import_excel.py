@@ -786,15 +786,403 @@ def import_28_campus(file_path=None):
     print("========================================================\n")
 
 
+
+EXCEL_44_PATH = os.path.join(BASE_DIR, 'Fee Record 44 campus.xlsx')
+
+MONTH_44_MAP = {
+    'mar': ('March', 3, 2026),
+    'march': ('March', 3, 2026),
+    'apr': ('April', 4, 2026),
+    'april': ('April', 4, 2026),
+    'may': ('May', 5, 2026),
+    'jun': ('June', 6, 2026),
+    'june': ('June', 6, 2026),
+    'jul': ('July', 7, 2026),
+    'july': ('July', 7, 2026),
+    'aug': ('August', 8, 2026),
+    'august': ('August', 8, 2026),
+    'sep': ('September', 9, 2026),
+    'sept': ('September', 9, 2026),
+    'september': ('September', 9, 2026),
+    'oct': ('October', 10, 2026),
+    'october': ('October', 10, 2026),
+    'nov': ('November', 11, 2026),
+    'november': ('November', 11, 2026),
+    'dec': ('December', 12, 2026),
+    'december': ('December', 12, 2026),
+    'jan': ('January', 1, 2027),
+    'january': ('January', 1, 2027),
+    'feb': ('February', 2, 2027),
+    'february': ('February', 2, 2027)
+}
+
+CLASS_44_MAP = {
+    'p.g': 'PG',
+    'pg': 'PG',
+    'nursery': 'Nursery',
+    'prep': 'Prep',
+    'one': 'One',
+    'two': 'Two',
+    'three': 'Three',
+    'four': 'Four',
+    'five': 'Five',
+    'six': 'Six',
+    'seven 1': 'Seven',
+    'seven': 'Seven',
+    'pre 9': 'Eight',
+    'pre 9th': 'Eight',
+    '9th': 'Nine',
+    '10th old': 'Graduate',
+    'ten new': 'Ten'
+}
+
+
+def import_44_campus(file_path=None):
+    init_db()
+    
+    target_excel = file_path or EXCEL_44_PATH
+    if not os.path.exists(target_excel):
+        print(f"Error: {target_excel} not found!")
+        return
+        
+    print(f"\n========================================================")
+    print(f"       IMPORTING 44 CAMPUS FEE RECORD                    ")
+    print(f"========================================================")
+    print(f"Loading Excel file: {target_excel}...")
+    wb = openpyxl.load_workbook(target_excel, data_only=True)
+    
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    # 1. Identify 44 Campus ID
+    campus_row = cur.execute("SELECT id, name FROM campuses WHERE code = '44_2l' OR code = '44_campus' OR name LIKE '%44%2l%' OR name LIKE '%44%' ORDER BY id ASC LIMIT 1").fetchone()
+    if campus_row:
+        campus_id = campus_row['id']
+        campus_name = campus_row['name']
+    else:
+        cur.execute("INSERT INTO campuses (name, code) VALUES ('44_2l campus', '44_2l')")
+        conn.commit()
+        campus_id = cur.lastrowid
+        campus_name = '44_2l campus'
+        
+    print(f"Target Campus: {campus_name} (ID: {campus_id})")
+    
+    # 2. Clear previous records for 44 Campus to prevent duplicates
+    cur.execute("DELETE FROM fees WHERE campus_id = ?", (campus_id,))
+    cur.execute("DELETE FROM annual_charges_payments WHERE campus_id = ?", (campus_id,))
+    cur.execute("DELETE FROM students WHERE campus_id = ?", (campus_id,))
+    conn.commit()
+    print("Previous records for 44 Campus cleared successfully.\n")
+    
+    total_students_imported = 0
+    total_active = 0
+    total_withdrawn = 0
+    total_fee_records = 0
+    total_fee_amount = 0
+    total_books_records = 0
+    total_books_amount = 0
+    total_ac_records = 0
+    total_ac_amount = 0
+    
+    for sheetname in wb.sheetnames:
+        ws = wb[sheetname]
+        
+        # Dynamically locate header row
+        header_r = None
+        for r in range(1, min(8, ws.max_row + 1)):
+            vals = [str(ws.cell(r, c).value).strip().lower() for c in range(1, min(20, ws.max_column + 1)) if ws.cell(r, c).value is not None]
+            if any('name' in v for v in vals):
+                header_r = r
+                break
+                
+        if not header_r:
+            continue
+            
+        headers = [str(ws.cell(header_r, c).value).strip() if ws.cell(header_r, c).value is not None else '' for c in range(1, ws.max_column + 1)]
+        while headers and not headers[-1]:
+            headers.pop()
+            
+        mapped_class = CLASS_44_MAP.get(sheetname.lower().strip(), sheetname.strip())
+        
+        # Identify columns
+        gross_col = None
+        ac_col = None
+        sp_col = None
+        statio_col = None
+        book_col = None
+        month_cols = []
+        
+        for c in range(4, len(headers) + 1):
+            h = headers[c-1].lower().strip()
+            if 'gross' in h or 'basic' in h:
+                gross_col = c
+            elif h in ('a/c', 'a.c', 'ac', 'annual', 'annual charges'):
+                ac_col = c
+            elif 's .pack' in h or 's.pack' in h or 'spack' in h or 'summer' in h:
+                sp_col = c
+            elif 'statio' in h:
+                statio_col = c
+            elif 'book' in h or 'n.b' in h or 'n.books' in h:
+                book_col = c
+            else:
+                for mk, mtuple in MONTH_44_MAP.items():
+                    if h.startswith(mk):
+                        month_cols.append((c, headers[c-1], mtuple))
+                        break
+                        
+        sheet_students_data = []
+        sheet_ac_data = []
+        sheet_fee_data = []
+        
+        for r in range(header_r + 1, ws.max_row + 1):
+            name_val = ws.cell(r, 2).value
+            if not name_val or str(name_val).strip().lower() in ('none', 'nan', '', 'total', 'grand total', 'name', 'sr. #', 'sr#', 'sr. no', 'sr no'):
+                continue
+                
+            name = str(name_val).strip()
+            father_val = ws.cell(r, 3).value
+            father = str(father_val).strip() if father_val and str(father_val).strip().lower() not in ('none', 'nan') else ''
+            
+            is_red = is_row_red(ws, r)
+            has_wd_text = False
+            
+            # 1. Parse Monthly Basic Fee (Gross Fee column, fallback to standard 2200)
+            m_fee = 0.0
+            if gross_col:
+                gv = ws.cell(r, gross_col).value
+                if isinstance(gv, (int, float)):
+                    m_fee = float(gv)
+                elif gv is not None:
+                    m = re.search(r'\d+', str(gv))
+                    if m:
+                        m_fee = float(m.group())
+            if m_fee == 0.0:
+                m_fee = 2200.0 # Standard base fee for 44 Campus
+                
+            # 2. Parse Annual Charges
+            ac_val = ws.cell(r, ac_col).value if ac_col else None
+            student_ac = 0.0
+            ac_paid = 0.0
+            ac_note = ''
+            if ac_val is not None:
+                if isinstance(ac_val, (int, float)):
+                    student_ac = float(ac_val)
+                    ac_paid = float(ac_val)
+                    ac_note = 'Paid'
+                else:
+                    ac_str = str(ac_val).strip().lower()
+                    if any(w in ac_str for w in ['w/d', 'withdraw', 'with drawl']):
+                        has_wd_text = True
+                        student_ac = 0.0
+                        ac_paid = 0.0
+                    elif ac_str in ('-', ' -', 'none', 'nan', ''):
+                        student_ac = 2200.0
+                        ac_paid = 0.0
+                    else:
+                        m = re.search(r'\d+', ac_str)
+                        if m:
+                            student_ac = float(m.group())
+                            ac_paid = float(m.group())
+                            ac_note = 'Paid'
+            else:
+                student_ac = 2200.0
+                
+            # 3. Parse Monthly Fee Payments
+            student_fees = []
+            first_active_month = None
+            for c, h_name, (mname, mnum, myear) in month_cols:
+                v = ws.cell(r, c).value
+                if v is not None and str(v).strip() != '':
+                    if isinstance(v, (int, float)):
+                        val_num = float(v)
+                        if val_num > 0:
+                            if first_active_month is None:
+                                first_active_month = (mnum, myear)
+                            student_fees.append((mname, myear, val_num, f'{myear}-{mnum:02d}-01', 'Imported from Excel'))
+                    else:
+                        v_str = str(v).strip().lower()
+                        if any(w in v_str for w in ['w/d', 'withdraw', 'with drawl', 'transfer', 'move']):
+                            has_wd_text = True
+                        elif v_str in ('-', ' -', 'none', 'nan', 'free', 'sick'):
+                            pass
+                        else:
+                            m = re.search(r'\d+', v_str)
+                            if m:
+                                amt = float(m.group())
+                                if amt > 0:
+                                    if first_active_month is None:
+                                        first_active_month = (mnum, myear)
+                                    student_fees.append((mname, myear, amt, f'{myear}-{mnum:02d}-01', f'Imported from Excel ({v})'))
+                                    
+            status = 'withdrawn' if (is_red or has_wd_text) else 'active'
+            if status == 'withdrawn':
+                total_withdrawn += 1
+            else:
+                total_active += 1
+                
+            start_month = first_active_month[0] if first_active_month else 3
+            start_year = first_active_month[1] if first_active_month else 2026
+            
+            student_idx = len(sheet_students_data)
+            sheet_students_data.append((
+                name, father, mapped_class, m_fee, student_ac, 0.0,
+                start_month, start_year, campus_id, status
+            ))
+            total_students_imported += 1
+            
+            # Annual Charges Payment
+            if ac_paid > 0:
+                sheet_ac_data.append((student_idx, ac_paid, '2026-03-01', campus_id, f'Annual Charges: {ac_note}'))
+                total_ac_records += 1
+                total_ac_amount += ac_paid
+                
+            # Summer Pack Payment
+            if sp_col:
+                sp_val = ws.cell(r, sp_col).value
+                if sp_val is not None:
+                    if isinstance(sp_val, (int, float)) and float(sp_val) > 0:
+                        sheet_ac_data.append((student_idx, float(sp_val), '2026-06-01', campus_id, 'Summer Pack: S.Pack Payment'))
+                        total_ac_records += 1
+                        total_ac_amount += float(sp_val)
+                    elif isinstance(sp_val, str):
+                        m = re.search(r'\d+', sp_val)
+                        if m and float(m.group()) > 0:
+                            amt = float(m.group())
+                            sheet_ac_data.append((student_idx, amt, '2026-06-01', campus_id, 'Summer Pack: S.Pack Payment'))
+                            total_ac_records += 1
+                            total_ac_amount += amt
+                            
+            # Stationery Payment (Playgroup, Nursery, Prep)
+            if statio_col:
+                st_val = ws.cell(r, statio_col).value
+                if st_val is not None:
+                    if isinstance(st_val, (int, float)) and float(st_val) > 0:
+                        sheet_ac_data.append((student_idx, float(st_val), '2026-03-01', campus_id, 'Stationery Payment'))
+                        total_ac_records += 1
+                        total_ac_amount += float(st_val)
+                    elif isinstance(st_val, str):
+                        m = re.search(r'\d+', st_val)
+                        if m and float(m.group()) > 0:
+                            amt = float(m.group())
+                            sheet_ac_data.append((student_idx, amt, '2026-03-01', campus_id, 'Stationery Payment'))
+                            total_ac_records += 1
+                            total_ac_amount += amt
+                            
+            # Books Payment
+            if book_col:
+                bk_val = ws.cell(r, book_col).value
+                if bk_val is not None:
+                    if isinstance(bk_val, (int, float)) and float(bk_val) > 0:
+                        sheet_ac_data.append((student_idx, float(bk_val), '2026-03-01', campus_id, 'Books / Syllabus Payment'))
+                        total_books_records += 1
+                        total_books_amount += float(bk_val)
+                    elif isinstance(bk_val, str):
+                        m = re.search(r'\d+', bk_val)
+                        if m and float(m.group()) > 0:
+                            amt = float(m.group())
+                            sheet_ac_data.append((student_idx, amt, '2026-03-01', campus_id, 'Books / Syllabus Payment'))
+                            total_books_records += 1
+                            total_books_amount += amt
+
+                            
+            # Monthly Fee Payments
+            for mname, myear, amt, date_paid, note in student_fees:
+                sheet_fee_data.append((student_idx, mname, myear, amt, date_paid, campus_id, note))
+                total_fee_records += 1
+                total_fee_amount += amt
+                
+        # Batch Insert for Sheet
+        if is_postgres():
+            from psycopg2.extras import execute_values
+            raw_conn = conn._conn
+            raw_cur = raw_conn.cursor()
+            
+            if sheet_students_data:
+                res = execute_values(
+                    raw_cur,
+                    """INSERT INTO students (name, father_name, class, monthly_fee, annual_charges, opening_arrears, start_month, start_year, campus_id, status)
+                       VALUES %s RETURNING id""",
+                    sheet_students_data,
+                    fetch=True
+                )
+                student_ids = [row[0] for row in res]
+                
+                if sheet_ac_data:
+                    ac_to_insert = [
+                        (student_ids[item[0]], 2026, item[1], item[2], item[3], item[4])
+                        for item in sheet_ac_data
+                    ]
+                    execute_values(
+                        raw_cur,
+                        """INSERT INTO annual_charges_payments (student_id, year, paid_amount, date_paid, campus_id, notes)
+                           VALUES %s""",
+                        ac_to_insert
+                    )
+                    
+                if sheet_fee_data:
+                    fees_to_insert = [
+                        (student_ids[item[0]], item[1], item[2], item[3], item[4], item[5], item[6])
+                        for item in sheet_fee_data
+                    ]
+                    execute_values(
+                        raw_cur,
+                        """INSERT INTO fees (student_id, month, year, paid_amount, date_paid, campus_id, notes)
+                           VALUES %s""",
+                        fees_to_insert
+                    )
+            raw_conn.commit()
+        else:
+            student_ids = []
+            for s_row in sheet_students_data:
+                cur.execute('''
+                    INSERT INTO students (name, father_name, class, monthly_fee, annual_charges, opening_arrears, start_month, start_year, campus_id, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', s_row)
+                student_ids.append(cur.lastrowid)
+                
+            for item in sheet_ac_data:
+                cur.execute('''
+                    INSERT INTO annual_charges_payments (student_id, year, paid_amount, date_paid, campus_id, notes)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', (student_ids[item[0]], 2026, item[1], item[2], item[3], item[4]))
+                
+            for item in sheet_fee_data:
+                cur.execute('''
+                    INSERT INTO fees (student_id, month, year, paid_amount, date_paid, campus_id, notes)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (student_ids[item[0]], item[1], item[2], item[3], item[4], item[5], item[6]))
+            conn.commit()
+            
+        print(f"  Processed Sheet '{sheetname}' -> Class '{mapped_class}': {len(sheet_students_data)} students, {len(sheet_fee_data)} fee/book transactions.")
+        
+    conn.commit()
+    conn.close()
+    
+    print("\n========================================================")
+    print("         44 CAMPUS IMPORT COMPLETED SUCCESSFULLY!        ")
+    print("========================================================")
+    print(f"Total Students Imported: {total_students_imported}")
+    print(f"   Active Students: {total_active}")
+    print(f"   Withdrawn (Red/WD) Students: {total_withdrawn}")
+    print(f"Total Monthly Tuition Transactions: {total_fee_records} (Total: Rs. {total_fee_amount:,})")
+    print(f"Total Books Payment Transactions: {total_books_records} (Total: Rs. {total_books_amount:,})")
+    print(f"Total Annual / Summer Pack / Stationery Charges: {total_ac_records} (Total: Rs. {total_ac_amount:,})")
+    print("========================================================\n")
+
+
 if __name__ == '__main__':
     import sys
     arg = sys.argv[1].lower() if len(sys.argv) > 1 else 'main'
     
-    if arg in ('28', '28_campus', 'campus28'):
+    if arg in ('44', '44_campus', 'campus44', '44_2l'):
+        import_44_campus()
+    elif arg in ('28', '28_campus', 'campus28'):
         import_28_campus()
-    elif arg in ('all', 'both'):
+    elif arg in ('all', 'both', 'three'):
         import_main_campus()
         import_28_campus()
+        import_44_campus()
     else:
         import_main_campus()
+
 
