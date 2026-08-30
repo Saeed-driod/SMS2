@@ -537,8 +537,8 @@ function openQuickCollectModal(id, name, father, className, payable, paid, remai
     let amountToFill = (remaining > 0) ? (paid > 0 ? (paid + remaining) : remaining) : (paid > 0 ? paid : payable);
     document.getElementById('modal_paid_amount').value = amountToFill;
     
-    // Reset additional charge inputs
-    document.getElementById('modal_annual_amount').value = 0;
+    // Reset additional charge inputs (pre-fill unpaid annual charges)
+    document.getElementById('modal_annual_amount').value = currentModalAnnual > 0 ? currentModalAnnual : 0;
     document.getElementById('modal_books_amount').value = 0;
     document.getElementById('modal_admission_amount').value = 0;
     document.getElementById('modal_other_amount').value = 0;

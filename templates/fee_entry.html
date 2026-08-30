@@ -158,7 +158,7 @@
                             <label class="form-label text-warning small fw-bold mb-1"><i class="fa-solid fa-shield me-1"></i> Annual Charges</label>
                             <div class="input-group input-group-sm">
                                 <span class="input-group-text bg-transparent border-secondary text-secondary">Rs.</span>
-                                <input type="number" step="any" min="0" class="form-control font-monospace" name="annual_amount" id="entry_annual_amount" placeholder="0" value="0">
+                                <input type="number" step="any" min="0" class="form-control font-monospace" name="annual_amount" id="entry_annual_amount" placeholder="0" value="{% if annual_info and not annual_info.is_paid %}{{ annual_info.unpaid_amount|round|int }}{% else %}0{% endif %}">
                             </div>
                         </div>
                         <div class="col-md-6">
