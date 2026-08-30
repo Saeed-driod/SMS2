@@ -14,6 +14,9 @@ uploads/*
 !uploads/.gitkeep
 ~$*.xlsx
 *.tmp
+.env
+.env.*
+
 
 # IDE and Editor files
 .vscode/

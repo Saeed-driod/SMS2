@@ -5,11 +5,24 @@ from datetime import datetime
 
 def get_database_url():
     url = os.environ.get('DATABASE_URL')
+    if not url:
+        env_file = os.path.join(BASE_DIR, '.env')
+        if os.path.exists(env_file):
+            try:
+                with open(env_file, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line.startswith('DATABASE_URL='):
+                            url = line.split('DATABASE_URL=', 1)[1].strip().strip("'\"")
+                            break
+            except Exception:
+                pass
     if url:
         url = url.strip().strip("'\"")
         if url.startswith('postgres://'):
             url = url.replace('postgres://', 'postgresql://', 1)
     return url
+
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SQLITE_DB_PATH = os.path.join(BASE_DIR, 'sms.db')
