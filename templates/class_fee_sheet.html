@@ -544,6 +544,7 @@
 
 <!-- Interactive Client-side Scripting -->
 <script>
+let currentModalStudentId = null;
 let currentModalPayable = 0;
 let currentModalAnnual = 0;
 let currentModalMonthly = 0;
@@ -553,6 +554,12 @@ let quickCollectModalObj = null;
 
 document.addEventListener('DOMContentLoaded', function() {
     quickCollectModalObj = new bootstrap.Modal(document.getElementById('quickCollectModal'));
+    
+    // Live update when Billing Month or Year changes inside the modal
+    const modalMonth = document.getElementById('modal_month');
+    const modalYear = document.getElementById('modal_year');
+    if (modalMonth) modalMonth.addEventListener('change', refreshModalFeeDetails);
+    if (modalYear) modalYear.addEventListener('change', refreshModalFeeDetails);
 });
 
 function selectClass(className) {
@@ -560,7 +567,56 @@ function selectClass(className) {
     document.getElementById('classFilterForm').submit();
 }
 
+function refreshModalFeeDetails() {
+    if (!currentModalStudentId) return;
+    const selectedMonth = document.getElementById('modal_month').value;
+    const selectedYear = document.getElementById('modal_year').value;
+    
+    const monthLabel = document.getElementById('modal_curr_month_label');
+    if (monthLabel) monthLabel.textContent = selectedMonth;
+
+    fetch(`/api/student/${currentModalStudentId}/fee-details?month=${encodeURIComponent(selectedMonth)}&year=${selectedYear}`)
+        .then(res => res.json())
+        .then(data => {
+            if (data.error) return;
+            currentModalPayable = data.total_payable;
+            currentModalAnnual = data.unpaid_ac;
+            currentModalMonthly = data.monthly_fee;
+            currentModalArrears = data.arrears;
+            currentModalCurrRemaining = data.current_month_remaining;
+
+            const rateBadge = document.getElementById('modal_monthly_rate_badge');
+            if (rateBadge) rateBadge.textContent = 'Rate: Rs. ' + Math.round(data.monthly_fee).toLocaleString();
+
+            const arrBadge = document.getElementById('modal_arrears_badge');
+            if (arrBadge) arrBadge.textContent = 'Due: Rs. ' + Math.round(data.arrears).toLocaleString();
+
+            const fullBtnText = document.getElementById('modal_quick_full_btn');
+            if (fullBtnText) fullBtnText.textContent = 'Rs. ' + Math.round(data.total_payable).toLocaleString();
+
+            const hint = document.getElementById('modal_curr_month_hint');
+            if (hint) {
+                if (data.paid_this_month > 0) {
+                    hint.textContent = 'Paid: Rs. ' + Math.round(data.paid_this_month).toLocaleString() + ' | Remaining: Rs. ' + Math.round(data.current_month_remaining).toLocaleString();
+                } else {
+                    hint.textContent = 'Due for ' + selectedMonth + ': Rs. ' + Math.round(data.monthly_fee).toLocaleString();
+                }
+            }
+
+            // Update Current Month Fee and Arrears inputs live
+            document.getElementById('modal_current_month_paid').value = Math.round(data.current_month_remaining);
+            document.getElementById('modal_arrears_paid').value = Math.round(data.arrears);
+
+            // Re-calculate grand total
+            calcModalGrandTotal();
+        })
+        .catch(err => {
+            console.error('Error refreshing fee details for month change:', err);
+        });
+}
+
 function openQuickCollectModal(id, name, father, className, payable, paid, remainingTuition, monthly, annualCharges, currRemaining, arrears) {
+    currentModalStudentId = id;
     document.getElementById('modal_student_id').value = id;
     document.getElementById('modal_student_name').textContent = name + ' (ID: ' + id + ')';
     document.getElementById('modal_father_name').textContent = 'Father: ' + (father || 'N/A');

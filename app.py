@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, session, send_file
+from flask import Flask, render_template, request, redirect, url_for, flash, session, send_file, jsonify
 import sqlite3
 import os
 import io
@@ -1985,6 +1985,46 @@ def fee_entry():
                            years=[2025, 2026, 2027, 2028],
                            annual_info=annual_info,
                            current_date=datetime.now().strftime('%Y-%m-%d'))
+
+@app.route('/api/student/<int:student_id>/fee-details')
+@login_required
+def api_student_fee_details(student_id):
+    target_month = request.args.get('month', MONTH_NUM_TO_NAME[datetime.now().month])
+    target_year = request.args.get('year', datetime.now().year, type=int)
+    months_count = request.args.get('months', 1, type=int)
+    
+    conn = get_db_connection()
+    student = conn.execute("SELECT * FROM students WHERE id = ?", (student_id,)).fetchone()
+    if not student:
+        conn.close()
+        return jsonify({'error': 'Student not found'}), 404
+        
+    details = get_student_fee_details(student, target_month, target_year, months=months_count)
+    
+    # Unpaid annual charges for target_year
+    ann_charges = float(student['annual_charges'] or 0.0) if 'annual_charges' in student.keys() else 0.0
+    paid_ac_row = conn.execute(
+        "SELECT SUM(paid_amount) as total_paid FROM annual_charges_payments WHERE student_id = ? AND year = ? AND (notes IS NULL OR (LOWER(notes) NOT LIKE ? AND LOWER(notes) NOT LIKE ?))",
+        (student_id, target_year, '%summer pack%', '%sp%')
+    ).fetchone()
+    paid_ac = float(paid_ac_row['total_paid'] or 0.0) if paid_ac_row else 0.0
+    unpaid_ac = max(0.0, ann_charges - paid_ac)
+    
+    conn.close()
+    
+    return jsonify({
+        'student_id': student_id,
+        'target_month': target_month,
+        'target_year': target_year,
+        'monthly_fee': details['monthly_fee'],
+        'arrears': details['arrears'],
+        'current_month_due': details['current_month_due'],
+        'current_month_remaining': details['current_month_remaining'],
+        'paid_this_month': details['paid_this_month'],
+        'total_payable': details['total_payable'],
+        'remaining_payable': details['remaining_payable'],
+        'unpaid_ac': unpaid_ac
+    })
 
 @app.route('/fee/class-sheet')
 @login_required

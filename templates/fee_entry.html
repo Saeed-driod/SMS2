@@ -129,7 +129,7 @@
                         </span>
                         <!-- Quick Action Buttons -->
                         <div class="btn-group btn-group-sm" role="group">
-                            <button type="button" class="btn btn-outline-info btn-xs py-0 px-2" onclick="setFullPayable()" title="Pay Current Month + All Arrears">
+                            <button type="button" class="btn btn-outline-info btn-xs py-0 px-2" id="fee_entry_full_btn" onclick="setFullPayable()" title="Pay Current Month + All Arrears">
                                 <i class="fa-solid fa-check-double me-1"></i> Pay Full (Rs. {{ arrears_info.total_payable|round|int if arrears_info else 0 }})
                             </button>
                             <button type="button" class="btn btn-outline-secondary btn-xs py-0 px-2" onclick="setCurrentMonthOnly()" title="Only pay for this billing month">
@@ -142,8 +142,8 @@
                         <!-- 1. Current Month Tuition Fee -->
                         <div class="col-md-6">
                             <label class="form-label text-light small fw-semibold mb-1 d-flex justify-content-between align-items-center">
-                                <span><i class="fa-solid fa-calendar-day text-info me-1"></i> {{ target_month }} {{ target_year }} Tuition</span>
-                                <span class="badge bg-secondary bg-opacity-25 text-info" style="font-size: 0.7rem;">Fee: Rs. {{ arrears_info.monthly_fee|round|int if arrears_info else 0 }}</span>
+                                <span><i class="fa-solid fa-calendar-day text-info me-1"></i> <span id="fee_entry_curr_month_label">{{ target_month }} {{ target_year }}</span> Tuition</span>
+                                <span class="badge bg-secondary bg-opacity-25 text-info" id="fee_entry_monthly_rate_badge" style="font-size: 0.7rem;">Fee: Rs. {{ arrears_info.monthly_fee|round|int if arrears_info else 0 }}</span>
                             </label>
                             <div class="input-group input-group-sm">
                                 <span class="input-group-text bg-transparent text-secondary border-secondary">Rs.</span>
@@ -151,7 +151,7 @@
                                        value="{{ arrears_info.current_month_remaining|round|int if arrears_info else 0 }}" 
                                        placeholder="0" oninput="recalcFeeTotal()">
                             </div>
-                            <div class="form-text text-secondary mt-1" style="font-size: 0.72rem;">
+                            <div class="form-text text-secondary mt-1" style="font-size: 0.72rem;" id="fee_entry_curr_hint">
                                 {% if arrears_info and arrears_info.paid_this_month > 0 %}
                                 Paid: Rs. {{ arrears_info.paid_this_month|round|int }} | Remaining: Rs. {{ arrears_info.current_month_remaining|round|int }}
                                 {% else %}
@@ -165,9 +165,9 @@
                             <label class="form-label text-light small fw-semibold mb-1 d-flex justify-content-between align-items-center">
                                 <span><i class="fa-solid fa-clock-rotate-left text-warning me-1"></i> Previous Arrears (پچھلا بقایا)</span>
                                 {% if arrears_info and arrears_info.arrears > 0 %}
-                                <span class="badge bg-warning bg-opacity-20 text-warning" style="font-size: 0.7rem;">Due: Rs. {{ arrears_info.arrears|round|int }}</span>
+                                <span class="badge bg-warning bg-opacity-20 text-warning" id="fee_entry_arrears_badge" style="font-size: 0.7rem;">Due: Rs. {{ arrears_info.arrears|round|int }}</span>
                                 {% else %}
-                                <span class="badge bg-success bg-opacity-20 text-success" style="font-size: 0.7rem;">Nil (Rs. 0)</span>
+                                <span class="badge bg-success bg-opacity-20 text-success" id="fee_entry_arrears_badge" style="font-size: 0.7rem;">Nil (Rs. 0)</span>
                                 {% endif %}
                             </label>
                             <div class="input-group input-group-sm">
@@ -401,6 +401,58 @@
                 window.location.href = `{{ url_for('fee_entry') }}?student_id=${studentId}&month=${month}&year=${year}`;
             }
         }
+
+        function refreshFeeDetailsLive() {
+            const studentId = select.value || "{{ selected_student_id or '' }}";
+            const month = monthSelect.value;
+            const year = yearSelect.value;
+            const monthsCount = parseInt(monthsInput?.value) || 1;
+
+            if (!studentId) return;
+
+            fetch(`/api/student/${studentId}/fee-details?month=${encodeURIComponent(month)}&year=${year}&months=${monthsCount}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.error) return;
+                    
+                    const currInput = document.getElementById('current_month_paid');
+                    const arrInput = document.getElementById('arrears_paid');
+                    if (currInput) currInput.value = Math.round(data.current_month_remaining);
+                    if (arrInput) arrInput.value = Math.round(data.arrears);
+
+                    const currLabel = document.getElementById('fee_entry_curr_month_label');
+                    if (currLabel) currLabel.textContent = `${month} ${year}`;
+
+                    const rateBadge = document.getElementById('fee_entry_monthly_rate_badge');
+                    if (rateBadge) rateBadge.textContent = 'Fee: Rs. ' + Math.round(data.monthly_fee).toLocaleString();
+
+                    const arrBadge = document.getElementById('fee_entry_arrears_badge');
+                    if (arrBadge) {
+                        arrBadge.textContent = data.arrears > 0 ? `Due: Rs. ${Math.round(data.arrears).toLocaleString()}` : 'Nil (Rs. 0)';
+                        arrBadge.className = data.arrears > 0 ? 'badge bg-warning bg-opacity-20 text-warning' : 'badge bg-success bg-opacity-20 text-success';
+                    }
+
+                    const hint = document.getElementById('fee_entry_curr_hint');
+                    if (hint) {
+                        if (data.paid_this_month > 0) {
+                            hint.textContent = `Paid: Rs. ${Math.round(data.paid_this_month).toLocaleString()} | Remaining: Rs. ${Math.round(data.current_month_remaining).toLocaleString()}`;
+                        } else {
+                            hint.textContent = `Due for ${month}: Rs. ${Math.round(data.monthly_fee).toLocaleString()}`;
+                        }
+                    }
+
+                    const fullBtn = document.getElementById('fee_entry_full_btn');
+                    if (fullBtn) fullBtn.innerHTML = `<i class="fa-solid fa-check-double me-1"></i> Pay Full (Rs. ${Math.round(data.total_payable).toLocaleString()})`;
+
+                    recalcFeeTotal();
+
+                    // Update URL bar cleanly without reload
+                    window.history.replaceState({}, '', `{{ url_for('fee_entry') }}?student_id=${studentId}&month=${encodeURIComponent(month)}&year=${year}`);
+                })
+                .catch(err => {
+                    reloadWithParams();
+                });
+        }
         
         // Reload details when student selection changes
         select.addEventListener('change', reloadWithParams);
@@ -436,17 +488,18 @@
         if (monthsInput) {
             monthsInput.addEventListener('input', function() {
                 updateEndMonth();
+                refreshFeeDetailsLive();
             });
         }
         
         monthSelect.addEventListener('change', function() {
             updateEndMonth();
-            reloadWithParams();
+            refreshFeeDetailsLive();
         });
         updateEndMonth();
 
-        // Reload when year changes
-        yearSelect.addEventListener('change', reloadWithParams);
+        // Live update when year changes
+        yearSelect.addEventListener('change', refreshFeeDetailsLive);
 
         // Initial fee breakdown calculation on page load
         recalcFeeTotal();
