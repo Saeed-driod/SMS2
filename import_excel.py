@@ -199,6 +199,20 @@ def is_row_red(ws, r):
                 return True
     return False
 
+def is_row_green(ws, r):
+    for c in (2, 3):
+        if c <= ws.max_column:
+            cell = ws.cell(r, c)
+            fill = cell.fill
+            if fill and fill.fill_type:
+                fg = fill.fgColor
+                rgb = str(getattr(fg, 'rgb', ''))
+                theme = getattr(fg, 'theme', None)
+                tint = getattr(fg, 'tint', 0.0)
+                if rgb in ('FF92D050', 'FF00FF00', 'FFC6EFCE', 'FFC4D79B', 'FFC3D69B', 'FFA9D08E', 'FF70AD47') or (theme in (7, 8) and tint > 0):
+                    return True
+    return False
+
 def import_main_campus():
     init_db()
     
@@ -273,6 +287,8 @@ def import_main_campus():
                 father = ''
                 
             status = 'withdrawn' if is_row_red(ws, r) else 'active'
+            is_free = is_row_green(ws, r)
+            
             if status == 'withdrawn':
                 total_withdrawn += 1
             else:
@@ -280,40 +296,44 @@ def import_main_campus():
                 
             # Determine monthly fee
             monthly_fee = 0
-            for c in range(4, min(14, ws.max_column + 1)):
-                h = headers[c-1].lower() if c-1 < len(headers) else ''
-                if ('month' in h or 'monthly' in h) and not any(h.startswith(m) for m in MONTH_LOOKUP):
-                    v = ws.cell(r, c).value
-                    amt, _ = parse_cell_amount(v)
-                    if amt > 0:
-                        monthly_fee = amt
-            if monthly_fee == 0:
-                monthly_fee = 2400
+            if is_free:
+                monthly_fee = 0
+            else:
+                for c in range(4, min(14, ws.max_column + 1)):
+                    h = headers[c-1].lower() if c-1 < len(headers) else ''
+                    if ('month' in h or 'monthly' in h) and not any(h.startswith(m) for m in MONTH_LOOKUP):
+                        v = ws.cell(r, c).value
+                        amt, _ = parse_cell_amount(v)
+                        if amt > 0:
+                            monthly_fee = amt
+                if monthly_fee == 0:
+                    monthly_fee = 2400
                 
             # Calculate opening arrears from month-tagged entries (like 21800july or 20700may)
             student_opening_arrears = 0
             arrears_tag = None
-            for c in range(4, ws.max_column + 1):
-                v = ws.cell(r, c).value
-                if v is not None:
-                    val_str = str(v).strip()
-                    is_arr, arr_amt, arr_suffix = is_month_arrears(val_str)
-                    if is_arr:
-                        student_opening_arrears += arr_amt
-                        arrears_tag = arr_suffix
-                        
-            # Also add pending dues from non-monthly columns (e.g. Book 4500(2000p), Admission 2000p, Sationary 5000p, Sp 500p)
-            for c in range(4, ws.max_column + 1):
-                h = headers[c-1].lower() if c-1 < len(headers) else ''
-                if h in ('month', 'monthly', 'month 26', 'month26', 'monthly 24') or any(h.startswith(m) for m in MONTH_LOOKUP):
-                    continue
-                if h == 'ac':
-                    continue # AC pending is handled directly in annual_charges
-                v = ws.cell(r, c).value
-                p_amt = parse_pending_amount(v)
-                if p_amt > 0:
-                    student_opening_arrears += p_amt
-                        
+            if not is_free:
+                for c in range(4, ws.max_column + 1):
+                    v = ws.cell(r, c).value
+                    if v is not None:
+                        val_str = str(v).strip()
+                        is_arr, arr_amt, arr_suffix = is_month_arrears(val_str)
+                        if is_arr:
+                            student_opening_arrears += arr_amt
+                            arrears_tag = arr_suffix
+                            
+                # Also add pending dues from non-monthly columns (e.g. Book 4500(2000p), Admission 2000p, Sationary 5000p, Sp 500p)
+                for c in range(4, ws.max_column + 1):
+                    h = headers[c-1].lower() if c-1 < len(headers) else ''
+                    if h in ('month', 'monthly', 'month 26', 'month26', 'monthly 24') or any(h.startswith(m) for m in MONTH_LOOKUP):
+                        continue
+                    if h == 'ac':
+                        continue # AC pending is handled directly in annual_charges
+                    v = ws.cell(r, c).value
+                    p_amt = parse_pending_amount(v)
+                    if p_amt > 0:
+                        student_opening_arrears += p_amt
+                         
             if student_opening_arrears > 0:
                 total_arrears_students += 1
                 total_arrears_amount += student_opening_arrears
@@ -324,11 +344,12 @@ def import_main_campus():
             # Calculate Annual Charges for this student from AC column
             class_standard_ac = 2600 if sheetname == 'Graduate' else 2700
             student_annual_charges = 0
-            for ac_col_idx, ac_col_name in ac_cols:
-                if ac_col_name.lower() == 'ac':
-                    v = ws.cell(r, ac_col_idx).value
-                    total_ac, paid_ac, ac_note = parse_ac_cell(v, class_standard_ac)
-                    student_annual_charges = total_ac
+            if not is_free:
+                for ac_col_idx, ac_col_name in ac_cols:
+                    if ac_col_name.lower() == 'ac':
+                        v = ws.cell(r, ac_col_idx).value
+                        total_ac, paid_ac, ac_note = parse_ac_cell(v, class_standard_ac)
+                        student_annual_charges = total_ac
                     
             student_idx = len(sheet_students_data)
             sheet_students_data.append((
@@ -338,47 +359,49 @@ def import_main_campus():
             total_students_imported += 1
             
             # Collect Annual Charges Payments (AC / Sp)
-            for ac_col_idx, ac_col_name in ac_cols:
-                v = ws.cell(r, ac_col_idx).value
-                if v is not None:
-                    if ac_col_name.lower() == 'ac':
-                        total_ac, paid_ac, ac_note = parse_ac_cell(v, class_standard_ac)
-                        if paid_ac > 0:
-                            date_paid = "2026-03-01"
-                            note_text = f"Annual Charges: {ac_note}"
-                            sheet_ac_data.append((student_idx, paid_ac, date_paid, campus_id, note_text))
-                            total_ac_records += 1
-                            total_ac_amount += paid_ac
-                    else:
-                        # Sp (Summer Pack)
-                        amt, note = parse_cell_amount(v)
-                        if amt > 0:
-                            date_paid = "2026-06-01"
-                            note_text = f"{ac_col_name}: {note}" if note else f"{ac_col_name} Payment"
-                            sheet_ac_data.append((student_idx, amt, date_paid, campus_id, note_text))
-                            total_ac_records += 1
-                            total_ac_amount += amt
+            if not is_free:
+                for ac_col_idx, ac_col_name in ac_cols:
+                    v = ws.cell(r, ac_col_idx).value
+                    if v is not None:
+                        if ac_col_name.lower() == 'ac':
+                            total_ac, paid_ac, ac_note = parse_ac_cell(v, class_standard_ac)
+                            if paid_ac > 0:
+                                date_paid = "2026-03-01"
+                                note_text = f"Annual Charges: {ac_note}"
+                                sheet_ac_data.append((student_idx, paid_ac, date_paid, campus_id, note_text))
+                                total_ac_records += 1
+                                total_ac_amount += paid_ac
+                        else:
+                            # Sp (Summer Pack)
+                            amt, note = parse_cell_amount(v)
+                            if amt > 0:
+                                date_paid = "2026-06-01"
+                                note_text = f"{ac_col_name}: {note}" if note else f"{ac_col_name} Payment"
+                                sheet_ac_data.append((student_idx, amt, date_paid, campus_id, note_text))
+                                total_ac_records += 1
+                                total_ac_amount += amt
                         
             # Collect Monthly Fee Payments
-            for c in range(4, ws.max_column + 1):
-                h = headers[c-1].lower() if c-1 < len(headers) else ''
-                m_matched = None
-                for mk, (mname, mnum) in MONTH_LOOKUP.items():
-                    if h.startswith(mk):
-                        m_matched = (mname, mnum)
-                        break
-                        
-                if m_matched:
-                    mname, mnum = m_matched
-                    v = ws.cell(r, c).value
-                    if v is not None and str(v).strip() != '':
-                        paid, note = parse_cell_amount(v, monthly_fee)
-                        if paid > 0:
-                            year = 2025 if (mname in ('November', 'December') and c < 8) else 2026
-                            date_paid = f"{year}-{mnum:02d}-01"
-                            note_text = note if note else 'Imported from Excel'
-                            sheet_fee_data.append((student_idx, mname, year, paid, date_paid, campus_id, note_text))
-                            total_fee_records += 1
+            if not is_free:
+                for c in range(4, ws.max_column + 1):
+                    h = headers[c-1].lower() if c-1 < len(headers) else ''
+                    m_matched = None
+                    for mk, (mname, mnum) in MONTH_LOOKUP.items():
+                        if h.startswith(mk):
+                            m_matched = (mname, mnum)
+                            break
+                            
+                    if m_matched:
+                        mname, mnum = m_matched
+                        v = ws.cell(r, c).value
+                        if v is not None and str(v).strip() != '':
+                            paid, note = parse_cell_amount(v, monthly_fee)
+                            if paid > 0:
+                                year = 2025 if (mname in ('November', 'December') and c < 8) else 2026
+                                date_paid = f"{year}-{mnum:02d}-01"
+                                note_text = note if note else 'Imported from Excel'
+                                sheet_fee_data.append((student_idx, mname, year, paid, date_paid, campus_id, note_text))
+                                total_fee_records += 1
                             total_fee_amount += paid
 
         # Fast Batch Insert for this sheet

@@ -121,27 +121,82 @@
                 </select>
 
                 {% if selected_student %}
-                <div class="mb-3">
-                    <div class="d-flex justify-content-between align-items-center mb-1">
-                        <label for="paid_amount" class="form-label mb-0">Paid Amount (Rs.) <span class="text-danger">*</span></label>
-                        <!-- Quick Multi-Month Selection Buttons -->
-                        <div class="btn-group btn-group-sm" role="group" id="quick_month_btns">
-                            <button type="button" class="btn btn-outline-info btn-xs py-0 px-2" onclick="setMonthsToPay(1)">1 Month</button>
-                            <button type="button" class="btn btn-outline-info btn-xs py-0 px-2" onclick="setMonthsToPay(2)">2 Months</button>
-                            <button type="button" class="btn btn-outline-info btn-xs py-0 px-2" onclick="setMonthsToPay(3)">3 Months</button>
-                            {% if arrears_info and arrears_info.arrears > 0 %}
-                            <button type="button" class="btn btn-outline-warning btn-xs py-0 px-2" onclick="setFullPayable()">Clear Dues (Rs. {{ arrears_info.total_payable|round|int }})</button>
-                            {% endif %}
+                <!-- Split Fee Entry: Current Month Tuition Fee + Previous Arrears -->
+                <div class="mb-3 p-3 rounded" style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--glass-border);">
+                    <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                        <span class="text-white fw-bold small text-uppercase">
+                            <i class="fa-solid fa-money-check-dollar text-success me-1"></i> Tuition & Arrears Breakdown
+                        </span>
+                        <!-- Quick Action Buttons -->
+                        <div class="btn-group btn-group-sm" role="group">
+                            <button type="button" class="btn btn-outline-info btn-xs py-0 px-2" onclick="setFullPayable()" title="Pay Current Month + All Arrears">
+                                <i class="fa-solid fa-check-double me-1"></i> Pay Full (Rs. {{ arrears_info.total_payable|round|int if arrears_info else 0 }})
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary btn-xs py-0 px-2" onclick="setCurrentMonthOnly()" title="Only pay for this billing month">
+                                Current Month Only
+                            </button>
                         </div>
                     </div>
-                    <div class="input-group">
-                        <span class="input-group-text bg-transparent border-end-0 border-light-subtle text-secondary" style="border: 1px solid var(--glass-border);">Rs.</span>
-                        <input type="number" step="any" class="form-control border-start-0" id="paid_amount" name="paid_amount" placeholder="Enter amount paid" value="{{ arrears_info.total_payable if arrears_info else '' }}" required oninput="previewDistribution()">
+
+                    <div class="row g-3">
+                        <!-- 1. Current Month Tuition Fee -->
+                        <div class="col-md-6">
+                            <label class="form-label text-light small fw-semibold mb-1 d-flex justify-content-between align-items-center">
+                                <span><i class="fa-solid fa-calendar-day text-info me-1"></i> {{ target_month }} {{ target_year }} Tuition</span>
+                                <span class="badge bg-secondary bg-opacity-25 text-info" style="font-size: 0.7rem;">Fee: Rs. {{ arrears_info.monthly_fee|round|int if arrears_info else 0 }}</span>
+                            </label>
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text bg-transparent text-secondary border-secondary">Rs.</span>
+                                <input type="number" step="any" min="0" class="form-control font-monospace" id="current_month_paid" name="current_month_paid" 
+                                       value="{{ arrears_info.current_month_remaining|round|int if arrears_info else 0 }}" 
+                                       placeholder="0" oninput="recalcFeeTotal()">
+                            </div>
+                            <div class="form-text text-secondary mt-1" style="font-size: 0.72rem;">
+                                {% if arrears_info and arrears_info.paid_this_month > 0 %}
+                                Paid: Rs. {{ arrears_info.paid_this_month|round|int }} | Remaining: Rs. {{ arrears_info.current_month_remaining|round|int }}
+                                {% else %}
+                                Due for {{ target_month }}: Rs. {{ arrears_info.monthly_fee|round|int if arrears_info else 0 }}
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <!-- 2. Previous Outstanding Arrears -->
+                        <div class="col-md-6">
+                            <label class="form-label text-light small fw-semibold mb-1 d-flex justify-content-between align-items-center">
+                                <span><i class="fa-solid fa-clock-rotate-left text-warning me-1"></i> Previous Arrears (پچھلا بقایا)</span>
+                                {% if arrears_info and arrears_info.arrears > 0 %}
+                                <span class="badge bg-warning bg-opacity-20 text-warning" style="font-size: 0.7rem;">Due: Rs. {{ arrears_info.arrears|round|int }}</span>
+                                {% else %}
+                                <span class="badge bg-success bg-opacity-20 text-success" style="font-size: 0.7rem;">Nil (Rs. 0)</span>
+                                {% endif %}
+                            </label>
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text bg-transparent text-secondary border-secondary">Rs.</span>
+                                <input type="number" step="any" min="0" class="form-control font-monospace" id="arrears_paid" name="arrears_paid" 
+                                       value="{{ arrears_info.arrears|round|int if arrears_info else 0 }}" 
+                                       placeholder="0" oninput="recalcFeeTotal()">
+                            </div>
+                            <div class="d-flex justify-content-between align-items-center mt-1">
+                                <span class="form-text text-secondary m-0" style="font-size: 0.72rem;">Past unpaid months only (never touches next months)</span>
+                                {% if arrears_info and arrears_info.arrears > 0 %}
+                                <button type="button" class="btn btn-link text-warning p-0 text-decoration-none" style="font-size: 0.7rem;" onclick="clearArrearsInput()">Pay 0 Arrears</button>
+                                {% endif %}
+                            </div>
+                        </div>
                     </div>
-                    <div class="form-text text-secondary small" id="amount_hint">Defaults to total payable amount (Rs. {{ arrears_info.total_payable if arrears_info else 0 }}).</div>
-                    <!-- Live Multi-Month Distribution Banner -->
-                    <div class="mt-2 p-2 rounded bg-info bg-opacity-10 border border-info border-opacity-25 small text-info" id="distribution_preview" style="display: none;">
-                        <i class="fa-solid fa-calendar-check me-1"></i> <span id="distribution_text"></span>
+
+                    <!-- Hidden Overall Paid Amount for backwards compatibility -->
+                    <input type="hidden" id="paid_amount" name="paid_amount" value="{{ arrears_info.total_payable|round|int if arrears_info else 0 }}">
+
+                    <!-- Total Tuition & Arrears Display Banner -->
+                    <div class="mt-3 p-2.5 rounded bg-primary bg-opacity-10 border border-primary border-opacity-25 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                        <div class="small">
+                            <span class="text-white fw-bold d-block"><i class="fa-solid fa-calculator text-primary me-1"></i> Total Tuition & Arrears Received:</span>
+                            <span class="text-secondary" style="font-size: 0.75rem;" id="fee_breakdown_text">Calculating...</span>
+                        </div>
+                        <div class="text-end">
+                            <span class="fs-5 fw-bold text-primary font-monospace" id="total_tuition_display">Rs. {{ arrears_info.total_payable|round|int if arrears_info else 0 }}</span>
+                        </div>
                     </div>
                 </div>
 
@@ -367,42 +422,69 @@
             } else {
                 endMonthInput.value = '';
             }
-            previewDistribution();
+            if (monthsInput) {
+                const count = parseInt(monthsInput.value) || 1;
+                const monthlyFee = parseFloat("{{ arrears_info.monthly_fee if arrears_info else (selected_student.monthly_fee if selected_student else 0) }}") || 0;
+                const currInput = document.getElementById('current_month_paid');
+                if (currInput && monthlyFee > 0) {
+                    currInput.value = Math.round(monthlyFee * count);
+                }
+                recalcFeeTotal();
+            }
         }
         
         if (monthsInput) {
             monthsInput.addEventListener('input', function() {
                 updateEndMonth();
-                const monthlyFee = parseFloat("{{ selected_student.monthly_fee if selected_student else 0 }}") || 0;
-                const count = parseInt(monthsInput.value) || 1;
-                const arrears = parseFloat("{{ arrears_info.arrears if arrears_info else 0 }}") || 0;
-                const paidAmtInput = document.getElementById('paid_amount');
-                if (paidAmtInput && monthlyFee > 0) {
-                    paidAmtInput.value = (monthlyFee * count) + arrears;
-                }
-                previewDistribution();
             });
         }
         
-        monthSelect.addEventListener('change', updateEndMonth);
+        monthSelect.addEventListener('change', function() {
+            updateEndMonth();
+            reloadWithParams();
+        });
         updateEndMonth();
 
-        // Reload when month/year change (for annual charges too)
+        // Reload when year changes
         yearSelect.addEventListener('change', reloadWithParams);
-        monthSelect.addEventListener('change', reloadWithParams);
+
+        // Initial fee breakdown calculation on page load
+        recalcFeeTotal();
     });
+
+    function recalcFeeTotal() {
+        const currInput = document.getElementById('current_month_paid');
+        const arrInput = document.getElementById('arrears_paid');
+        const totalDisplay = document.getElementById('total_tuition_display');
+        const breakdownText = document.getElementById('fee_breakdown_text');
+        const hiddenPaidInput = document.getElementById('paid_amount');
+
+        const currPaid = parseFloat(currInput?.value) || 0;
+        const arrPaid = parseFloat(arrInput?.value) || 0;
+        const total = currPaid + arrPaid;
+
+        if (hiddenPaidInput) hiddenPaidInput.value = total;
+        if (totalDisplay) totalDisplay.textContent = 'Rs. ' + Math.round(total).toLocaleString('en-US');
+
+        if (breakdownText) {
+            const parts = [];
+            const monthName = document.getElementById('month')?.value || 'Current Month';
+            if (currPaid > 0) parts.push(`${monthName}: Rs. ${Math.round(currPaid).toLocaleString('en-US')}`);
+            if (arrPaid > 0) parts.push(`Past Arrears: Rs. ${Math.round(arrPaid).toLocaleString('en-US')}`);
+            breakdownText.textContent = parts.length > 0 ? parts.join(' + ') : 'No tuition or arrears entered (Rs. 0)';
+        }
+    }
 
     function setMonthsToPay(count) {
         const monthsInput = document.getElementById('months');
-        const paidAmtInput = document.getElementById('paid_amount');
-        const monthlyFee = parseFloat("{{ selected_student.monthly_fee if selected_student else 0 }}") || 0;
-        const arrears = parseFloat("{{ arrears_info.arrears if arrears_info else 0 }}") || 0;
+        const currInput = document.getElementById('current_month_paid');
+        const monthlyFee = parseFloat("{{ arrears_info.monthly_fee if arrears_info else (selected_student.monthly_fee if selected_student else 0) }}") || 0;
         
         if (monthsInput) {
             monthsInput.value = count;
         }
-        if (paidAmtInput && monthlyFee > 0) {
-            paidAmtInput.value = (monthlyFee * count) + arrears;
+        if (currInput && monthlyFee > 0) {
+            currInput.value = Math.round(monthlyFee * count);
         }
         
         const monthSelect = document.getElementById('month');
@@ -416,64 +498,38 @@
                 endMonthInput.value = monthNames[endIdx];
             }
         }
-        previewDistribution();
+        recalcFeeTotal();
     }
 
     function setFullPayable() {
-        const totalPayable = parseFloat("{{ arrears_info.total_payable if arrears_info else 0 }}") || 0;
-        const paidAmtInput = document.getElementById('paid_amount');
-        if (paidAmtInput) {
-            paidAmtInput.value = totalPayable;
-        }
-        previewDistribution();
+        const currRemaining = parseFloat("{{ arrears_info.current_month_remaining if arrears_info else (selected_student.monthly_fee if selected_student else 0) }}") || 0;
+        const totalArrears = parseFloat("{{ arrears_info.arrears if arrears_info else 0 }}") || 0;
+        
+        const currInput = document.getElementById('current_month_paid');
+        const arrInput = document.getElementById('arrears_paid');
+        
+        if (currInput) currInput.value = Math.round(currRemaining);
+        if (arrInput) arrInput.value = Math.round(totalArrears);
+        
+        recalcFeeTotal();
     }
 
-    function previewDistribution() {
-        const previewBox = document.getElementById('distribution_preview');
-        const previewText = document.getElementById('distribution_text');
-        if (!previewBox || !previewText) return;
+    function setCurrentMonthOnly() {
+        const currRemaining = parseFloat("{{ arrears_info.current_month_remaining if arrears_info else (selected_student.monthly_fee if selected_student else 0) }}") || 0;
         
-        const isMonthly = document.getElementById('type_monthly')?.checked;
-        if (!isMonthly) {
-            previewBox.style.display = 'none';
-            return;
-        }
+        const currInput = document.getElementById('current_month_paid');
+        const arrInput = document.getElementById('arrears_paid');
         
-        const paidAmt = parseFloat(document.getElementById('paid_amount')?.value) || 0;
-        const monthlyFee = parseFloat("{{ selected_student.monthly_fee if selected_student else 0 }}") || 0;
-        const monthsInput = document.getElementById('months');
-        const numMonths = parseInt(monthsInput?.value) || 1;
-        const startMonth = document.getElementById('month')?.value || 'August';
-        const startYear = parseInt(document.getElementById('year')?.value) || 2026;
+        if (currInput) currInput.value = Math.round(currRemaining);
+        if (arrInput) arrInput.value = 0;
         
-        if (monthlyFee <= 0) {
-            previewBox.style.display = 'none';
-            return;
-        }
-        
-        const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-        let startIdx = monthNames.findIndex(m => m.toLowerCase() === startMonth.toLowerCase());
-        if (startIdx < 0) startIdx = 0;
-        
-        let calculatedMonths = numMonths > 1 ? numMonths : Math.max(1, Math.round(paidAmt / monthlyFee));
-        
-        if (calculatedMonths > 1 || paidAmt >= monthlyFee * 1.5) {
-            const parts = [];
-            let rem = paidAmt;
-            for (let i = 0; i < calculatedMonths; i++) {
-                let mIdx = (startIdx + i) % 12;
-                let mYear = startYear + Math.floor((startIdx + i) / 12);
-                let mName = monthNames[mIdx];
-                let isLast = (i === calculatedMonths - 1);
-                let alloc = isLast ? rem : Math.min(monthlyFee, rem);
-                rem -= alloc;
-                parts.push(`${mName} ${mYear} (Rs. ${Math.round(alloc).toLocaleString()})`);
-            }
-            previewText.textContent = `Smart Multi-Month Allocation: ${parts.join(' + ')} = Total Rs. ${Math.round(paidAmt).toLocaleString()}`;
-            previewBox.style.display = 'block';
-        } else {
-            previewBox.style.display = 'none';
-        }
+        recalcFeeTotal();
+    }
+
+    function clearArrearsInput() {
+        const arrInput = document.getElementById('arrears_paid');
+        if (arrInput) arrInput.value = 0;
+        recalcFeeTotal();
     }
 
     function togglePaymentType() {
@@ -489,11 +545,6 @@
         const addSection = document.getElementById('entry_additional_charges_section');
         if (addSection) addSection.style.display = isMonthly ? '' : 'none';
         
-        const quickBtns = document.getElementById('quick_month_btns');
-        if (quickBtns) {
-            quickBtns.style.display = isMonthly ? '' : 'none';
-        }
-        
         // Month column is only needed for monthly tuition
         const monthCol = document.getElementById('month_col');
         if (monthCol) {
@@ -504,24 +555,6 @@
         const monthYearRow = document.getElementById('month_year_selection');
         if (monthYearRow) {
             monthYearRow.style.display = isAnnual ? 'none' : '';
-        }
-        
-        previewDistribution();
-        
-        // Update hint text
-        const hint = document.getElementById('amount_hint');
-        if (hint) {
-            if (isAnnual) {
-                hint.textContent = 'Enter the annual charges amount being paid.';
-            } else if (isBooks) {
-                hint.textContent = 'Enter the books / syllabus payment amount (Rs.).';
-            } else if (isAdmission) {
-                hint.textContent = 'Enter the admission / registration fee amount (Rs.).';
-            } else if (isOther) {
-                hint.textContent = 'Enter the custom fee amount (Rs.) and title above.';
-            } else {
-                hint.textContent = 'Defaults to total payable monthly amount.';
-            }
         }
     }
 
