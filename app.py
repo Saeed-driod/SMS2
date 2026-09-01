@@ -2104,6 +2104,7 @@ def class_fee_sheet():
                 'annual_charges': ann_charges,
                 'unpaid_ac': unpaid_ac,
                 'arrears': arrears,
+                'current_month_remaining': details.get('current_month_remaining', monthly_fee),
                 'total_payable': total_payable,
                 'paid': paid,
                 'remaining': remaining,
@@ -2153,6 +2154,10 @@ def fee_quick_collect():
     
     student_id = int(request.form['student_id'])
     paid_amount = float(request.form.get('paid_amount', 0) or 0)
+    current_month_paid = float(request.form.get('current_month_paid', 0) or 0)
+    arrears_paid = float(request.form.get('arrears_paid', 0) or 0)
+    has_split = ('current_month_paid' in request.form or 'arrears_paid' in request.form)
+
     month = request.form['month']
     year = int(request.form['year'])
     selected_class = request.form.get('return_class', '')
@@ -2177,14 +2182,18 @@ def fee_quick_collect():
     collected_items = []
     total_collected = 0.0
 
+    effective_tuition = (current_month_paid + arrears_paid) if has_split else paid_amount
+
     # 1. Tuition Payment
-    if paid_amount > 0:
+    if effective_tuition > 0:
         summaries = record_tuition_payment(
             conn=conn,
             student=student,
             start_month_name=month,
             start_year=year,
             paid_amount=paid_amount,
+            current_month_amount=current_month_paid if has_split else None,
+            arrears_amount=arrears_paid if has_split else None,
             num_months=1,
             date_paid=date_paid,
             payment_mode=payment_mode,
@@ -2193,7 +2202,7 @@ def fee_quick_collect():
             collected_by=collected_by
         )
         collected_items.extend(summaries)
-        total_collected += paid_amount
+        total_collected += effective_tuition
 
     # 2. Annual Charges
     if annual_amount > 0:

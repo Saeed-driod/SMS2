@@ -285,7 +285,7 @@
                             <div class="d-flex justify-content-center gap-1">
                                 <button type="button" 
                                         class="btn btn-sm {% if row.remaining <= 0 %}btn-outline-success{% else %}btn-primary{% endif %} px-2 py-1 d-inline-flex align-items-center gap-1"
-                                        onclick="openQuickCollectModal({{ row.id }}, '{{ row.name|replace("'", "\\'") }}', '{{ row.father_name|replace("'", "\\'") }}', '{{ row.class }}', {{ row.total_payable }}, {{ row.paid }}, {{ row.remaining_tuition }}, {{ row.monthly_fee }}, {{ row.unpaid_ac }})"
+                                        onclick="openQuickCollectModal({{ row.id }}, '{{ row.name|replace("'", "\\'") }}', '{{ row.father_name|replace("'", "\\'") }}', '{{ row.class }}', {{ row.total_payable }}, {{ row.paid }}, {{ row.remaining_tuition }}, {{ row.monthly_fee }}, {{ row.unpaid_ac }}, {{ row.current_month_remaining }}, {{ row.arrears }})"
                                         title="{% if row.remaining <= 0 %}Update Payment{% else %}Collect Fee Record{% endif %}">
                                     <i class="fa-solid fa-receipt"></i>
                                     <span>{% if row.remaining <= 0 %}Edit{% else %}Collect{% endif %}</span>
@@ -369,24 +369,58 @@
                         </div>
                     </div>
 
-                    <!-- 1. Monthly Tuition Fee Row -->
-                    <div class="mb-3 p-3 rounded" style="background: rgba(16, 185, 129, 0.04); border: 1px solid rgba(16, 185, 129, 0.2);">
-                        <div class="d-flex justify-content-between align-items-center mb-1">
-                            <label for="modal_paid_amount" class="form-label mb-0 fw-bold text-success">
-                                <i class="fa-solid fa-calendar-check me-1"></i> Monthly Tuition Fee (Rs.)
-                            </label>
-                            <span class="text-secondary small">Payable Dues: <strong class="text-white" id="modal_total_payable">Rs. 0</strong></span>
+                    <!-- 1. Split Tuition & Arrears Section -->
+                    <div class="mb-3 p-3 rounded" style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--glass-border);">
+                        <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                            <span class="text-white fw-bold small text-uppercase">
+                                <i class="fa-solid fa-money-check-dollar text-success me-1"></i> Tuition Fee & Arrears Breakdown
+                            </span>
+                            <div class="btn-group btn-group-sm" role="group">
+                                <button type="button" class="btn btn-outline-success btn-xs py-0 px-2" onclick="setFullPayableAmount()" title="Fill Total Payable">
+                                    <i class="fa-solid fa-check-double me-1"></i> Full Paid (<span id="modal_quick_full_btn">Rs. 0</span>)
+                                </button>
+                                <button type="button" class="btn btn-outline-info btn-xs py-0 px-2" onclick="setCurrentMonthOnlyModal()" title="Current Month Only">
+                                    Current Month Only
+                                </button>
+                                <button type="button" class="btn btn-outline-secondary btn-xs py-0 px-2" onclick="clearTuitionAmount()" title="Clear Tuition">
+                                    Pay 0
+                                </button>
+                            </div>
                         </div>
-                        <div class="input-group input-group-sm">
-                            <span class="input-group-text bg-transparent border-secondary text-secondary">Rs.</span>
-                            <input type="number" step="any" min="0" class="form-control font-monospace fw-bold text-success fs-6" id="modal_paid_amount" name="paid_amount" oninput="calcModalGrandTotal()">
-                            <button type="button" class="btn btn-outline-success btn-sm" onclick="setFullPayableAmount()" title="Fill Total Payable Amount">
-                                Full Paid
-                            </button>
-                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="clearTuitionAmount()" title="Clear Tuition">
-                                0
-                            </button>
+
+                        <div class="row g-2">
+                            <!-- Current Month Tuition -->
+                            <div class="col-6">
+                                <label class="form-label text-light small fw-semibold mb-1 d-flex justify-content-between">
+                                    <span><i class="fa-solid fa-calendar-day text-info me-1"></i> <span id="modal_curr_month_label">Current Month</span> Fee</span>
+                                    <span class="text-info font-monospace small" id="modal_monthly_rate_badge">Rs. 0</span>
+                                </label>
+                                <div class="input-group input-group-sm">
+                                    <span class="input-group-text bg-transparent border-secondary text-secondary">Rs.</span>
+                                    <input type="number" step="any" min="0" class="form-control font-monospace fw-bold text-info" id="modal_current_month_paid" name="current_month_paid" oninput="calcModalGrandTotal()">
+                                </div>
+                                <span class="text-secondary" style="font-size: 0.72rem;" id="modal_curr_month_hint">Due this month</span>
+                            </div>
+
+                            <!-- Previous Arrears -->
+                            <div class="col-6">
+                                <label class="form-label text-light small fw-semibold mb-1 d-flex justify-content-between">
+                                    <span><i class="fa-solid fa-clock-rotate-left text-warning me-1"></i> Previous Arrears (بقایا)</span>
+                                    <span class="text-warning font-monospace small" id="modal_arrears_badge">Rs. 0</span>
+                                </label>
+                                <div class="input-group input-group-sm">
+                                    <span class="input-group-text bg-transparent border-secondary text-secondary">Rs.</span>
+                                    <input type="number" step="any" min="0" class="form-control font-monospace fw-bold text-warning" id="modal_arrears_paid" name="arrears_paid" oninput="calcModalGrandTotal()">
+                                </div>
+                                <div class="d-flex justify-content-between align-items-center mt-1">
+                                    <span class="text-secondary" style="font-size: 0.72rem;">Past unpaid dues</span>
+                                    <button type="button" class="btn btn-link text-warning p-0 text-decoration-none" style="font-size: 0.7rem;" onclick="clearModalArrears()">Pay 0 Arrears</button>
+                                </div>
+                            </div>
                         </div>
+
+                        <!-- Hidden paid_amount for backwards compatibility -->
+                        <input type="hidden" id="modal_paid_amount" name="paid_amount" value="0">
                     </div>
 
                     <!-- 2. Additional Collections (Annual, Books, Admission, Other) -->
@@ -512,6 +546,9 @@
 <script>
 let currentModalPayable = 0;
 let currentModalAnnual = 0;
+let currentModalMonthly = 0;
+let currentModalArrears = 0;
+let currentModalCurrRemaining = 0;
 let quickCollectModalObj = null;
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -523,19 +560,43 @@ function selectClass(className) {
     document.getElementById('classFilterForm').submit();
 }
 
-function openQuickCollectModal(id, name, father, className, payable, paid, remaining, monthly, annualCharges) {
+function openQuickCollectModal(id, name, father, className, payable, paid, remainingTuition, monthly, annualCharges, currRemaining, arrears) {
     document.getElementById('modal_student_id').value = id;
     document.getElementById('modal_student_name').textContent = name + ' (ID: ' + id + ')';
     document.getElementById('modal_father_name').textContent = 'Father: ' + (father || 'N/A');
     document.getElementById('modal_class_badge').textContent = 'Class: ' + className;
     
-    currentModalPayable = payable;
+    currentModalPayable = payable || 0;
     currentModalAnnual = annualCharges || 0;
-    document.getElementById('modal_total_payable').textContent = 'Rs. ' + payable.toLocaleString();
-    
-    // Default the paid amount input to remaining balance if > 0, else total payable
-    let amountToFill = (remaining > 0) ? (paid > 0 ? (paid + remaining) : remaining) : (paid > 0 ? paid : payable);
-    document.getElementById('modal_paid_amount').value = amountToFill;
+    currentModalMonthly = monthly || 0;
+    currentModalArrears = (arrears !== undefined && arrears !== null) ? arrears : Math.max(0, payable - monthly);
+    currentModalCurrRemaining = (currRemaining !== undefined && currRemaining !== null) ? currRemaining : monthly;
+
+    const monthName = document.getElementById('modal_month')?.value || 'Current Month';
+    const monthLabel = document.getElementById('modal_curr_month_label');
+    if (monthLabel) monthLabel.textContent = monthName;
+
+    const rateBadge = document.getElementById('modal_monthly_rate_badge');
+    if (rateBadge) rateBadge.textContent = 'Rate: Rs. ' + Math.round(monthly).toLocaleString();
+
+    const arrBadge = document.getElementById('modal_arrears_badge');
+    if (arrBadge) arrBadge.textContent = 'Due: Rs. ' + Math.round(currentModalArrears).toLocaleString();
+
+    const fullBtnText = document.getElementById('modal_quick_full_btn');
+    if (fullBtnText) fullBtnText.textContent = 'Rs. ' + Math.round(payable).toLocaleString();
+
+    const hint = document.getElementById('modal_curr_month_hint');
+    if (hint) {
+        if (paid > 0) {
+            hint.textContent = 'Paid: Rs. ' + Math.round(paid).toLocaleString() + ' | Remaining: Rs. ' + Math.round(currentModalCurrRemaining).toLocaleString();
+        } else {
+            hint.textContent = 'Due for ' + monthName + ': Rs. ' + Math.round(monthly).toLocaleString();
+        }
+    }
+
+    // Default current month and arrears inputs
+    document.getElementById('modal_current_month_paid').value = Math.round(currentModalCurrRemaining);
+    document.getElementById('modal_arrears_paid').value = Math.round(currentModalArrears);
     
     // Reset additional charge inputs (pre-fill unpaid annual charges)
     document.getElementById('modal_annual_amount').value = currentModalAnnual > 0 ? currentModalAnnual : 0;
@@ -554,20 +615,35 @@ function openQuickCollectModal(id, name, father, className, payable, paid, remai
     if (quickCollectModalObj) {
         quickCollectModalObj.show();
         setTimeout(() => {
-            const input = document.getElementById('modal_paid_amount');
-            input.focus();
-            input.select();
+            const input = document.getElementById('modal_current_month_paid');
+            if (input) {
+                input.focus();
+                input.select();
+            }
         }, 400);
     }
 }
 
 function setFullPayableAmount() {
-    document.getElementById('modal_paid_amount').value = currentModalPayable;
+    document.getElementById('modal_current_month_paid').value = Math.round(currentModalCurrRemaining);
+    document.getElementById('modal_arrears_paid').value = Math.round(currentModalArrears);
+    calcModalGrandTotal();
+}
+
+function setCurrentMonthOnlyModal() {
+    document.getElementById('modal_current_month_paid').value = Math.round(currentModalCurrRemaining);
+    document.getElementById('modal_arrears_paid').value = 0;
+    calcModalGrandTotal();
+}
+
+function clearModalArrears() {
+    document.getElementById('modal_arrears_paid').value = 0;
     calcModalGrandTotal();
 }
 
 function clearTuitionAmount() {
-    document.getElementById('modal_paid_amount').value = 0;
+    document.getElementById('modal_current_month_paid').value = 0;
+    document.getElementById('modal_arrears_paid').value = 0;
     calcModalGrandTotal();
 }
 
@@ -577,25 +653,33 @@ function fillStudentAnnual() {
 }
 
 function calcModalGrandTotal() {
-    const tuition = parseFloat(document.getElementById('modal_paid_amount').value) || 0;
-    const annual = parseFloat(document.getElementById('modal_annual_amount').value) || 0;
-    const books = parseFloat(document.getElementById('modal_books_amount').value) || 0;
-    const admission = parseFloat(document.getElementById('modal_admission_amount').value) || 0;
-    const other = parseFloat(document.getElementById('modal_other_amount').value) || 0;
+    const currPaid = parseFloat(document.getElementById('modal_current_month_paid')?.value) || 0;
+    const arrPaid = parseFloat(document.getElementById('modal_arrears_paid')?.value) || 0;
+    const tuitionTotal = currPaid + arrPaid;
+
+    const hiddenPaidInput = document.getElementById('modal_paid_amount');
+    if (hiddenPaidInput) hiddenPaidInput.value = tuitionTotal;
+
+    const annual = parseFloat(document.getElementById('modal_annual_amount')?.value) || 0;
+    const books = parseFloat(document.getElementById('modal_books_amount')?.value) || 0;
+    const admission = parseFloat(document.getElementById('modal_admission_amount')?.value) || 0;
+    const other = parseFloat(document.getElementById('modal_other_amount')?.value) || 0;
     
-    const grandTotal = tuition + annual + books + admission + other;
+    const grandTotal = tuitionTotal + annual + books + admission + other;
     
-    document.getElementById('modal_grand_total_display').textContent = 'Rs. ' + grandTotal.toLocaleString();
-    document.getElementById('modal_btn_total').textContent = 'Rs. ' + grandTotal.toLocaleString();
+    document.getElementById('modal_grand_total_display').textContent = 'Rs. ' + Math.round(grandTotal).toLocaleString();
+    document.getElementById('modal_btn_total').textContent = 'Rs. ' + Math.round(grandTotal).toLocaleString();
     
     let parts = [];
-    if (tuition > 0) parts.push('Tuition: Rs. ' + tuition.toLocaleString());
-    if (annual > 0) parts.push('Annual: Rs. ' + annual.toLocaleString());
-    if (books > 0) parts.push('Books: Rs. ' + books.toLocaleString());
-    if (admission > 0) parts.push('Admission: Rs. ' + admission.toLocaleString());
+    const monthName = document.getElementById('modal_month')?.value || 'Tuition';
+    if (currPaid > 0) parts.push(monthName + ': Rs. ' + Math.round(currPaid).toLocaleString());
+    if (arrPaid > 0) parts.push('Past Arrears: Rs. ' + Math.round(arrPaid).toLocaleString());
+    if (annual > 0) parts.push('Annual: Rs. ' + Math.round(annual).toLocaleString());
+    if (books > 0) parts.push('Books: Rs. ' + Math.round(books).toLocaleString());
+    if (admission > 0) parts.push('Admission: Rs. ' + Math.round(admission).toLocaleString());
     if (other > 0) {
-        const title = document.getElementById('modal_other_title').value.trim() || 'Other';
-        parts.push(title + ': Rs. ' + other.toLocaleString());
+        const title = document.getElementById('modal_other_title')?.value.trim() || 'Other';
+        parts.push(title + ': Rs. ' + Math.round(other).toLocaleString());
     }
     
     document.getElementById('modal_summary_breakdown').textContent = parts.length > 0 ? parts.join(' + ') : 'No amount entered';
