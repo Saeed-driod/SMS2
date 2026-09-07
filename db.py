@@ -478,6 +478,9 @@ def init_db():
             conn.execute("CREATE INDEX IF NOT EXISTS idx_ac_student_id ON annual_charges_payments(student_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_students_class ON students(class)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_students_campus ON students(campus_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_fees_date_paid ON fees(date_paid)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_ac_date_paid ON annual_charges_payments(date_paid)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_students_name ON students(name)")
         else:
             cur = conn.cursor()
             cur.execute("PRAGMA table_info(students)")
@@ -488,6 +491,9 @@ def init_db():
             conn.execute("CREATE INDEX IF NOT EXISTS idx_ac_student_id ON annual_charges_payments(student_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_students_class ON students(class)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_students_campus ON students(campus_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_fees_date_paid ON fees(date_paid)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_ac_date_paid ON annual_charges_payments(date_paid)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_students_name ON students(name)")
     except Exception as e:
         print(f"Migration check warning: {e}")
 

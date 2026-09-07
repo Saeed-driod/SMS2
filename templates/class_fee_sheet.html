@@ -62,6 +62,12 @@
         <!-- Class Navigation Pills -->
         <div class="d-flex align-items-center gap-2 flex-wrap pt-2">
             <span class="text-secondary small font-weight-bold me-2"><i class="fa-solid fa-school text-warning me-1"></i> SELECT CLASS:</span>
+            <button type="button" 
+                    onclick="selectClass('All')" 
+                    class="btn btn-sm {% if selected_class == 'All' %}btn-primary shadow-sm font-weight-bold{% else %}btn-outline-info{% endif %} rounded-pill px-3 py-1">
+                <i class="fa-solid fa-layer-group me-1"></i> All Classes (تمام کلاسز)
+                <span class="badge bg-dark bg-opacity-50 ms-1" style="font-size: 0.68rem;">{{ total_school_students }}</span>
+            </button>
             {% for c in classes %}
             <button type="button" 
                     onclick="selectClass('{{ c }}')" 
@@ -78,19 +84,39 @@
 <div class="glass-panel">
     <!-- Live Table Filter Bar -->
     <div class="row align-items-center mb-3 no-print">
-        <div class="col-md-5">
-            <div class="search-wrapper">
-                <i class="fa-solid fa-magnifying-glass"></i>
-                <input type="text" id="sheetSearchInput" class="form-control" placeholder="Quick filter by student name, father name, roll # or barcode (STD-105)..." onkeyup="filterSheetTable()">
+        <div class="col-md-6">
+            <div class="d-flex align-items-center gap-2">
+                <div class="search-wrapper flex-grow-1 position-relative">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                    <input type="text" id="sheetSearchInput" class="form-control" placeholder="Live search across all classes by student name, father, roll # (STD-105)..." oninput="handleSheetSearch()">
+                    <span id="searchSpinner" class="spinner-border spinner-border-sm text-info position-absolute end-0 top-50 translate-middle-y me-3" style="display: none;"></span>
+                </div>
+                <div class="form-check form-switch mb-0 text-nowrap d-flex align-items-center gap-1" title="Search across all classes in the school">
+                    <input class="form-check-input" type="checkbox" id="searchAllClassesToggle" {% if selected_class == 'All' %}checked{% endif %} onchange="handleToggleSearchScope()" style="cursor: pointer;">
+                    <label class="form-check-label text-info small fw-bold" for="searchAllClassesToggle" style="cursor: pointer; font-size: 0.8rem;">
+                        All Classes
+                    </label>
+                </div>
             </div>
         </div>
-        <div class="col-md-7 text-md-end mt-2 mt-md-0 d-flex gap-2 justify-content-md-end align-items-center">
+        <div class="col-md-6 text-md-end mt-2 mt-md-0 d-flex gap-2 justify-content-md-end align-items-center flex-wrap">
             <span class="text-secondary small me-1">Status Filter:</span>
-            <button type="button" class="btn btn-sm btn-outline-secondary py-1 px-2.5 rounded-pill small active status-btn" onclick="filterStatus('all', this)">All ({{ total_students }})</button>
-            <button type="button" class="btn btn-sm btn-outline-success py-1 px-2.5 rounded-pill small status-btn" onclick="filterStatus('Paid', this)">Paid ({{ paid_count }})</button>
-            <button type="button" class="btn btn-sm btn-outline-warning py-1 px-2.5 rounded-pill small status-btn" onclick="filterStatus('Partial', this)">Partial ({{ partial_count }})</button>
-            <button type="button" class="btn btn-sm btn-outline-danger py-1 px-2.5 rounded-pill small status-btn" onclick="filterStatus('Unpaid', this)">Unpaid ({{ unpaid_count }})</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary py-1 px-2.5 rounded-pill small active status-btn" onclick="filterStatus('all', this)">All (<span id="count_all">{{ total_students }}</span>)</button>
+            <button type="button" class="btn btn-sm btn-outline-success py-1 px-2.5 rounded-pill small status-btn" onclick="filterStatus('Paid', this)">Paid (<span id="count_paid">{{ paid_count }}</span>)</button>
+            <button type="button" class="btn btn-sm btn-outline-warning py-1 px-2.5 rounded-pill small status-btn" onclick="filterStatus('Partial', this)">Partial (<span id="count_partial">{{ partial_count }}</span>)</button>
+            <button type="button" class="btn btn-sm btn-outline-danger py-1 px-2.5 rounded-pill small status-btn" onclick="filterStatus('Unpaid', this)">Unpaid (<span id="count_unpaid">{{ unpaid_count }}</span>)</button>
         </div>
+    </div>
+
+    <!-- Live Search Active Alert Banner -->
+    <div id="liveSearchAlertBar" class="py-2 px-3 mb-3 d-flex justify-content-between align-items-center rounded-3 small" style="display: none; background: rgba(6, 182, 212, 0.12); border: 1px solid rgba(6, 182, 212, 0.3);">
+        <div>
+            <i class="fa-solid fa-bolt text-warning me-1"></i>
+            <span id="liveSearchAlertText" class="text-white">Searching across all classes...</span>
+        </div>
+        <button type="button" class="btn btn-sm btn-link text-info text-decoration-none p-0 fw-bold" onclick="clearLiveSearch()">
+            <i class="fa-solid fa-xmark me-1"></i> Clear Search / Reset View
+        </button>
     </div>
 
     <!-- Print Title Header -->
@@ -107,6 +133,7 @@
                 <tr>
                     <th style="width: 105px;" class="text-center">Roll / Barcode</th>
                     <th>Student Name</th>
+                    <th class="class-col-header" style="{% if selected_class != 'All' %}display: none;{% endif %}">Class</th>
                     <th>Father Name</th>
                     <th>Phone / WhatsApp</th>
                     <th class="text-end">Monthly Fee</th>
@@ -142,6 +169,11 @@
                             {% if session.role == 'admin' and not active_campus_id and row.campus_name %}
                             <span class="text-muted" style="font-size: 0.7rem;">{{ row.campus_name }}</span>
                             {% endif %}
+                        </td>
+                        
+                        <!-- Student Class -->
+                        <td class="class-col-cell" style="{% if selected_class != 'All' %}display: none;{% endif %}">
+                            <span class="badge badge-class">Class {{ row.class }}</span>
                         </td>
                         
                         <!-- Father Name -->
@@ -666,7 +698,225 @@ function calcModalGrandTotal() {
     document.getElementById('modal_summary_breakdown').textContent = parts.length > 0 ? parts.join(' + ') : 'No amount entered';
 }
 
-// Live client-side instant filtering across the table (Supports Name, Father, ID & Barcode)
+// Live Search Across All Classes & Client-Side Filtering Engine
+let initialTbodyHtml = '';
+let initialCounts = { all: 0, paid: 0, partial: 0, unpaid: 0 };
+let searchDebounceTimer = null;
+const isAllClassesPage = {{ 'true' if selected_class == 'All' else 'false' }};
+const currentTargetMonth = {{ target_month|tojson }};
+const currentTargetYear = {{ target_year|tojson }};
+
+document.addEventListener('DOMContentLoaded', function() {
+    const tbody = document.querySelector('#feeSheetTable tbody');
+    if (tbody) {
+        initialTbodyHtml = tbody.innerHTML;
+    }
+    initialCounts.all = parseInt(document.getElementById('count_all')?.textContent || '0');
+    initialCounts.paid = parseInt(document.getElementById('count_paid')?.textContent || '0');
+    initialCounts.partial = parseInt(document.getElementById('count_partial')?.textContent || '0');
+    initialCounts.unpaid = parseInt(document.getElementById('count_unpaid')?.textContent || '0');
+});
+
+function handleSheetSearch() {
+    const query = document.getElementById('sheetSearchInput').value.trim();
+    const searchAllToggle = document.getElementById('searchAllClassesToggle');
+    const searchAll = searchAllToggle ? searchAllToggle.checked : false;
+
+    if (!query) {
+        clearLiveSearch();
+        return;
+    }
+
+    if (searchAll || isAllClassesPage) {
+        clearTimeout(searchDebounceTimer);
+        searchDebounceTimer = setTimeout(() => {
+            performLiveGlobalSearch(query);
+        }, 250);
+    } else {
+        filterSheetTable();
+        // If 0 matches found in current class, prompt user to search all classes
+        const visibleRows = document.querySelectorAll('.sheet-row:not([style*="display: none"])');
+        if (visibleRows.length === 0 && query.length >= 2) {
+            const alertBar = document.getElementById('liveSearchAlertBar');
+            const alertText = document.getElementById('liveSearchAlertText');
+            if (alertBar && alertText) {
+                alertBar.style.display = 'flex';
+                alertText.innerHTML = `No matches in <strong>Class {{ selected_class }}</strong>. <button type="button" class="btn btn-xs btn-outline-info ms-2 py-0 px-2 fw-bold" onclick="enableAllClassesSearch()">Search Across ALL Classes (تمام کلاسز میں تلاش)</button>`;
+            }
+        }
+    }
+}
+
+function handleToggleSearchScope() {
+    const query = document.getElementById('sheetSearchInput').value.trim();
+    if (query) {
+        handleSheetSearch();
+    }
+}
+
+function enableAllClassesSearch() {
+    const toggle = document.getElementById('searchAllClassesToggle');
+    if (toggle) toggle.checked = true;
+    handleSheetSearch();
+}
+
+function performLiveGlobalSearch(query) {
+    const spinner = document.getElementById('searchSpinner');
+    const alertBar = document.getElementById('liveSearchAlertBar');
+    const alertText = document.getElementById('liveSearchAlertText');
+    const tbody = document.querySelector('#feeSheetTable tbody');
+    
+    if (spinner) spinner.style.display = 'inline-block';
+    
+    fetch(`/api/fee-registry/search?q=${encodeURIComponent(query)}&month=${encodeURIComponent(currentTargetMonth)}&year=${currentTargetYear}`)
+        .then(res => res.json())
+        .then(data => {
+            if (spinner) spinner.style.display = 'none';
+            if (alertBar) alertBar.style.display = 'flex';
+            if (alertText) {
+                alertText.innerHTML = `Showing <strong>${data.count}</strong> student(s) matching "<strong>${escapeHtml(query)}</strong>" across <strong>ALL CLASSES</strong>`;
+            }
+
+            // Always show class column when searching across all classes
+            document.querySelectorAll('.class-col-header').forEach(el => el.style.display = '');
+
+            if (!tbody) return;
+            tbody.innerHTML = '';
+
+            let cPaid = 0, cPartial = 0, cUnpaid = 0;
+
+            if (data.results && data.results.length > 0) {
+                data.results.forEach(s => {
+                    if (s.status === 'Paid') cPaid++;
+                    else if (s.status === 'Partial') cPartial++;
+                    else cUnpaid++;
+
+                    const tr = document.createElement('tr');
+                    tr.className = 'align-middle sheet-row';
+                    tr.setAttribute('data-status', s.status);
+                    tr.setAttribute('data-name', (s.name || '').toLowerCase());
+                    tr.setAttribute('data-father', (s.father_name || '').toLowerCase());
+                    tr.setAttribute('data-id', s.id);
+                    tr.setAttribute('data-barcode', 'std-' + s.id);
+
+                    const escName = escapeQuoteJs(s.name);
+                    const escFather = escapeQuoteJs(s.father_name);
+                    const escClass = escapeQuoteJs(s.class);
+
+                    const phoneHtml = s.phone_number ? 
+                        `<a href="https://wa.me/${s.phone_number.replace(/[\s-]/g, '')}" target="_blank" class="text-info text-decoration-none small d-inline-flex align-items-center gap-1 font-monospace" title="WhatsApp">
+                            <i class="fa-brands fa-whatsapp text-success"></i>${escapeHtml(s.phone_number)}
+                         </a>` : '<span class="text-muted">&mdash;</span>';
+
+                    let statusBadgeHtml = '';
+                    if (s.status === 'Paid') {
+                        statusBadgeHtml = `<span class="badge bg-success bg-opacity-25 text-success border border-success px-2 py-1"><i class="fa-solid fa-circle-check me-1"></i>PAID</span>`;
+                    } else if (s.status === 'Partial') {
+                        statusBadgeHtml = `<span class="badge bg-warning bg-opacity-25 text-warning border border-warning px-2 py-1"><i class="fa-solid fa-clock me-1"></i>PARTIAL</span>`;
+                    } else {
+                        statusBadgeHtml = `<span class="badge bg-danger bg-opacity-25 text-danger border border-danger px-2 py-1"><i class="fa-solid fa-circle-xmark me-1"></i>UNPAID</span>`;
+                    }
+
+                    tr.innerHTML = `
+                        <td class="text-center font-monospace">
+                            <span class="badge bg-dark border border-secondary text-info" style="font-size: 0.72rem;">
+                                <i class="fa-solid fa-barcode me-1"></i>STD-${s.id}
+                            </span>
+                        </td>
+                        <td>
+                            <span class="text-white fw-bold d-block">${escapeHtml(s.name)}</span>
+                            ${s.campus_name ? `<span class="text-muted" style="font-size: 0.7rem;">${escapeHtml(s.campus_name)}</span>` : ''}
+                        </td>
+                        <td class="class-col-cell">
+                            <span class="badge badge-class">Class ${escapeHtml(s.class)}</span>
+                        </td>
+                        <td class="text-secondary">${escapeHtml(s.father_name)}</td>
+                        <td>${phoneHtml}</td>
+                        <td class="text-end font-monospace text-secondary">Rs. ${Math.round(s.monthly_fee).toLocaleString()}</td>
+                        <td class="text-end font-monospace ${s.arrears > 0 ? 'text-warning fw-bold' : 'text-muted'}">Rs. ${Math.round(s.arrears).toLocaleString()}</td>
+                        <td class="text-end font-monospace ${s.unpaid_ac > 0 ? 'text-warning fw-bold' : 'text-muted'}">Rs. ${Math.round(s.unpaid_ac).toLocaleString()}</td>
+                        <td class="text-end font-monospace fw-bold text-white bg-dark bg-opacity-25">Rs. ${Math.round(s.total_payable).toLocaleString()}</td>
+                        <td class="text-end font-monospace ${s.paid > 0 ? 'text-success fw-bold' : 'text-muted'}">Rs. ${Math.round(s.paid).toLocaleString()}</td>
+                        <td class="text-end font-monospace ${s.remaining > 0 ? 'text-danger fw-bold' : 'text-muted'}">Rs. ${Math.round(s.remaining).toLocaleString()}</td>
+                        <td class="text-center">${statusBadgeHtml}</td>
+                        <td class="text-center no-print">
+                            <div class="d-flex justify-content-center gap-1">
+                                <button type="button" 
+                                        class="btn btn-sm ${s.remaining <= 0 ? 'btn-outline-success' : 'btn-primary'} px-2 py-1 d-inline-flex align-items-center gap-1"
+                                        onclick="openQuickCollectModal(${s.id}, '${escName}', '${escFather}', '${escClass}', ${s.total_payable}, ${s.paid}, ${s.remaining_tuition}, ${s.monthly_fee}, ${s.unpaid_ac}, ${s.current_month_remaining}, ${s.arrears})"
+                                        title="${s.remaining <= 0 ? 'Update Payment' : 'Collect Fee Record'}">
+                                    <i class="fa-solid fa-receipt"></i>
+                                    <span class="d-none d-lg-inline">${s.remaining <= 0 ? 'Update' : 'Collect'}</span>
+                                </button>
+                                <a href="/voucher/generate?student_id=${s.id}&month=${encodeURIComponent(currentTargetMonth)}&year=${currentTargetYear}" 
+                                   class="btn btn-sm btn-outline-info px-2 py-1" title="Print Fee Voucher">
+                                    <i class="fa-solid fa-print"></i>
+                                </a>
+                                <a href="/fee/history?student_id=${s.id}" 
+                                   class="btn btn-sm btn-outline-secondary px-2 py-1" title="Payment History">
+                                    <i class="fa-solid fa-history"></i>
+                                </a>
+                            </div>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } else {
+                tbody.innerHTML = `<tr><td colspan="13" class="text-center text-secondary py-5">No students found matching "<strong>${escapeHtml(query)}</strong>" across any class.</td></tr>`;
+            }
+
+            // Update badge counts
+            updateFilterBadges(data.count, cPaid, cPartial, cUnpaid);
+        })
+        .catch(err => {
+            if (spinner) spinner.style.display = 'none';
+            if (alertText) alertText.textContent = 'Error searching across all classes: ' + err;
+        });
+}
+
+function clearLiveSearch() {
+    const alertBar = document.getElementById('liveSearchAlertBar');
+    if (alertBar) alertBar.style.display = 'none';
+    
+    const input = document.getElementById('sheetSearchInput');
+    if (input) input.value = '';
+
+    const tbody = document.querySelector('#feeSheetTable tbody');
+    if (tbody && initialTbodyHtml) {
+        tbody.innerHTML = initialTbodyHtml;
+    }
+
+    if (!isAllClassesPage) {
+        document.querySelectorAll('.class-col-header, .class-col-cell').forEach(el => el.style.display = 'none');
+    }
+
+    updateFilterBadges(initialCounts.all, initialCounts.paid, initialCounts.partial, initialCounts.unpaid);
+}
+
+function updateFilterBadges(total, paid, partial, unpaid) {
+    const elAll = document.getElementById('count_all');
+    const elPaid = document.getElementById('count_paid');
+    const elPartial = document.getElementById('count_partial');
+    const elUnpaid = document.getElementById('count_unpaid');
+    if (elAll) elAll.textContent = total;
+    if (elPaid) elPaid.textContent = paid;
+    if (elPartial) elPartial.textContent = partial;
+    if (elUnpaid) elUnpaid.textContent = unpaid;
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str).replace(/[&<>"']/g, function(m) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m];
+    });
+}
+
+function escapeQuoteJs(str) {
+    if (!str) return '';
+    return String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+}
+
+// Live client-side filtering across currently rendered rows
 function filterSheetTable() {
     const input = document.getElementById('sheetSearchInput').value.toLowerCase().trim();
     const cleanDigits = input.replace(/^[a-z]+[-_]?/i, '');
@@ -701,8 +951,10 @@ function filterSheetTable() {
 }
 
 function filterStatus(statusType, btnElement) {
-    document.querySelectorAll('.status-btn').forEach(btn => btn.classList.remove('active'));
-    btnElement.classList.add('active');
+    if (btnElement) {
+        document.querySelectorAll('.status-btn').forEach(btn => btn.classList.remove('active'));
+        btnElement.classList.add('active');
+    }
     filterSheetTable();
 }
 </script>

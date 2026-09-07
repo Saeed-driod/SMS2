@@ -877,6 +877,86 @@ def dashboard():
     payment_count = conn.execute(query_payments, params).fetchone()[0]
     total_collected = conn.execute(query_collected, params).fetchone()[0] or 0
     
+    # --- DAILY CAMPUS ENTRIES SUMMARY ---
+    today_str = datetime.now().strftime('%Y-%m-%d')
+    daily_date = request.args.get('daily_date', today_str).strip() or today_str
+    try:
+        curr_d = datetime.strptime(daily_date, '%Y-%m-%d')
+        prev_daily_date = (curr_d - timedelta(days=1)).strftime('%Y-%m-%d')
+        next_daily_date = (curr_d + timedelta(days=1)).strftime('%Y-%m-%d')
+    except Exception:
+        daily_date = today_str
+        prev_daily_date = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+        next_daily_date = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
+
+    # 1. Fees entries by campus on daily_date
+    daily_fee_sql = """
+        SELECT COALESCE(f.campus_id, s.campus_id) as c_id, COUNT(f.id) as tx_count, COALESCE(SUM(f.paid_amount), 0) as total_amt
+        FROM fees f
+        LEFT JOIN students s ON f.student_id = s.id
+        WHERE f.date_paid = ?
+    """
+    fee_params = [daily_date]
+    if campus_id:
+        daily_fee_sql += " AND (f.campus_id = ? OR (f.campus_id IS NULL AND s.campus_id = ?))"
+        fee_params.extend([campus_id, campus_id])
+    daily_fee_sql += " GROUP BY COALESCE(f.campus_id, s.campus_id)"
+    daily_fee_rows = conn.execute(daily_fee_sql, fee_params).fetchall()
+    fee_stats_map = {r['c_id']: {'count': r['tx_count'], 'amount': float(r['total_amt'] or 0.0)} for r in daily_fee_rows if r['c_id']}
+
+    # 2. Annual charges entries by campus on daily_date
+    daily_ac_sql = """
+        SELECT COALESCE(a.campus_id, s.campus_id) as c_id, COUNT(a.id) as tx_count, COALESCE(SUM(a.paid_amount), 0) as total_amt
+        FROM annual_charges_payments a
+        LEFT JOIN students s ON a.student_id = s.id
+        WHERE a.date_paid = ?
+    """
+    ac_params = [daily_date]
+    if campus_id:
+        daily_ac_sql += " AND (a.campus_id = ? OR (a.campus_id IS NULL AND s.campus_id = ?))"
+        ac_params.extend([campus_id, campus_id])
+    daily_ac_sql += " GROUP BY COALESCE(a.campus_id, s.campus_id)"
+    daily_ac_rows = conn.execute(daily_ac_sql, ac_params).fetchall()
+    ac_stats_map = {r['c_id']: {'count': r['tx_count'], 'amount': float(r['total_amt'] or 0.0)} for r in daily_ac_rows if r['c_id']}
+
+    # Fetch campuses list
+    all_campuses_query = "SELECT id, name, code FROM campuses"
+    if campus_id:
+        all_campuses_query += " WHERE id = ?"
+        camp_list = conn.execute(all_campuses_query, (campus_id,)).fetchall()
+    else:
+        all_campuses_query += " ORDER BY name"
+        camp_list = conn.execute(all_campuses_query).fetchall()
+
+    daily_campus_stats = []
+    daily_total_entries = 0
+    daily_total_amount = 0.0
+
+    for c in camp_list:
+        cid = c['id']
+        f_info = fee_stats_map.get(cid, {'count': 0, 'amount': 0.0})
+        a_info = ac_stats_map.get(cid, {'count': 0, 'amount': 0.0})
+        c_entries = f_info['count'] + a_info['count']
+        c_amt = f_info['amount'] + a_info['amount']
+        
+        daily_total_entries += c_entries
+        daily_total_amount += c_amt
+
+        daily_campus_stats.append({
+            'campus_id': cid,
+            'campus_name': c['name'],
+            'campus_code': c['code'],
+            'entries_count': c_entries,
+            'total_amount': c_amt,
+            'fee_count': f_info['count'],
+            'fee_amount': f_info['amount'],
+            'ac_count': a_info['count'],
+            'ac_amount': a_info['amount']
+        })
+
+    # Campuses with entries on this date first, sorted by total amount
+    daily_campus_stats.sort(key=lambda x: (x['entries_count'] > 0, x['total_amount']), reverse=True)
+
     # Get class breakdown
     class_query = "SELECT class, COUNT(*) as count FROM students"
     if campus_id:
@@ -924,6 +1004,12 @@ def dashboard():
                            student_count=student_count,
                            payment_count=payment_count,
                            total_collected=total_collected,
+                           daily_date=daily_date,
+                           prev_daily_date=prev_daily_date,
+                           next_daily_date=next_daily_date,
+                           daily_campus_stats=daily_campus_stats,
+                           daily_total_entries=daily_total_entries,
+                           daily_total_amount=daily_total_amount,
                            class_breakdown=class_breakdown,
                            recent_payments=recent_payments,
                            school_name=settings.get('school_name', 'Alliedian School'),
@@ -931,6 +1017,75 @@ def dashboard():
                            current_year=current_year,
                            chart_labels=chart_labels,
                            chart_values=chart_values)
+
+@app.route('/api/daily-campus-entries')
+@login_required
+def api_daily_campus_entries():
+    campus_id = request.args.get('campus_id', type=int)
+    date_paid = request.args.get('date', datetime.now().strftime('%Y-%m-%d')).strip()
+    active_campus_id = get_active_campus_id()
+    if session.get('role') != 'admin' and active_campus_id:
+        campus_id = active_campus_id
+        
+    conn = get_db_connection()
+    c_cond = ""
+    c_params = [date_paid]
+    if campus_id:
+        c_cond = " AND (f.campus_id = ? OR (f.campus_id IS NULL AND s.campus_id = ?))"
+        c_params.extend([campus_id, campus_id])
+        
+    fee_sql = f"""
+        SELECT f.id, f.student_id, f.month, f.year, f.paid_amount, f.date_paid, f.payment_mode, f.reference_no, f.notes, f.collected_by,
+               s.name as student_name, s.class as student_class, c.name as campus_name, 'Tuition Fee' as category
+        FROM fees f
+        LEFT JOIN students s ON f.student_id = s.id
+        LEFT JOIN campuses c ON COALESCE(f.campus_id, s.campus_id) = c.id
+        WHERE f.date_paid = ? {c_cond}
+        ORDER BY f.id DESC
+    """
+    fee_records = conn.execute(fee_sql, c_params).fetchall()
+    
+    ac_cond = ""
+    ac_params = [date_paid]
+    if campus_id:
+        ac_cond = " AND (a.campus_id = ? OR (a.campus_id IS NULL AND s.campus_id = ?))"
+        ac_params.extend([campus_id, campus_id])
+        
+    ac_sql = f"""
+        SELECT a.id, a.student_id, 'Annual Charges' as month, a.year, a.paid_amount, a.date_paid, a.payment_mode, a.reference_no, a.notes, a.collected_by,
+               s.name as student_name, s.class as student_class, c.name as campus_name, 'Annual Charges' as category
+        FROM annual_charges_payments a
+        LEFT JOIN students s ON a.student_id = s.id
+        LEFT JOIN campuses c ON COALESCE(a.campus_id, s.campus_id) = c.id
+        WHERE a.date_paid = ? {ac_cond}
+        ORDER BY a.id DESC
+    """
+    ac_records = conn.execute(ac_sql, ac_params).fetchall()
+    
+    campus_name = "All Campuses"
+    if campus_id:
+        c_row = conn.execute("SELECT name FROM campuses WHERE id = ?", (campus_id,)).fetchone()
+        if c_row:
+            campus_name = c_row['name']
+            
+    conn.close()
+    
+    combined = []
+    for r in fee_records:
+        combined.append(dict(r))
+    for r in ac_records:
+        combined.append(dict(r))
+        
+    combined.sort(key=lambda x: x['id'], reverse=True)
+    return jsonify({
+        'status': 'success',
+        'date': date_paid,
+        'campus_id': campus_id,
+        'campus_name': campus_name,
+        'total_entries': len(combined),
+        'total_amount': sum(float(x.get('paid_amount') or 0.0) for x in combined),
+        'entries': combined
+    })
 
 @app.route('/students')
 @login_required
@@ -2026,6 +2181,128 @@ def api_student_fee_details(student_id):
         'unpaid_ac': unpaid_ac
     })
 
+@app.route('/api/fee-registry/search')
+@login_required
+def api_fee_registry_search():
+    q = request.args.get('q', '').strip()
+    target_month = request.args.get('month', MONTH_NUM_TO_NAME[datetime.now().month])
+    target_year = request.args.get('year', datetime.now().year, type=int)
+    search_class = request.args.get('class', '').strip()
+    active_campus_id = get_active_campus_id()
+    
+    if not q:
+        return jsonify({'status': 'success', 'results': [], 'count': 0})
+        
+    conn = get_db_connection()
+    
+    # Strip prefixes like STD- / std- / #
+    clean_digits = re.sub(r'^[a-zA-Z\-_#]+', '', q).strip()
+    
+    where_clauses = ["(s.status IS NULL OR s.status = 'active')"]
+    params = []
+    
+    search_or = ["s.name LIKE ?", "s.father_name LIKE ?", "s.phone_number LIKE ?"]
+    params.extend([f"%{q}%", f"%{q}%", f"%{q}%"])
+    
+    if clean_digits.isdigit():
+        search_or.append("s.id = ?")
+        params.append(int(clean_digits))
+        
+    where_clauses.append(f"({' OR '.join(search_or)})")
+    
+    if active_campus_id:
+        where_clauses.append("s.campus_id = ?")
+        params.append(active_campus_id)
+        
+    if search_class and search_class.lower() != 'all':
+        where_clauses.append("s.class = ?")
+        params.append(search_class)
+        
+    where_sql = " AND ".join(where_clauses)
+    query = f"""
+        SELECT s.*, c.name as campus_name
+        FROM students s
+        LEFT JOIN campuses c ON s.campus_id = c.id
+        WHERE {where_sql}
+        ORDER BY s.class ASC, s.name ASC
+        LIMIT 60
+    """
+    
+    students = conn.execute(query, params).fetchall()
+    student_ids = [s['id'] for s in students]
+    
+    fees_map = {sid: [] for sid in student_ids}
+    ac_map = {sid: 0.0 for sid in student_ids}
+    
+    if student_ids:
+        placeholders = ','.join(['?'] * len(student_ids))
+        all_fees = conn.execute(
+            f"SELECT student_id, month, year, paid_amount, date_paid, payment_mode, reference_no, notes FROM fees WHERE student_id IN ({placeholders})",
+            student_ids
+        ).fetchall()
+        for f in all_fees:
+            fees_map[f['student_id']].append(f)
+            
+        all_ac = conn.execute(
+            f"SELECT student_id, SUM(paid_amount) as total_paid FROM annual_charges_payments WHERE student_id IN ({placeholders}) AND year = ? AND (notes IS NULL OR (LOWER(notes) NOT LIKE ? AND LOWER(notes) NOT LIKE ?)) GROUP BY student_id",
+            student_ids + [target_year, '%summer pack%', '%sp%']
+        ).fetchall()
+        for ac in all_ac:
+            ac_map[ac['student_id']] = float(ac['total_paid'] or 0.0)
+            
+    conn.close()
+    
+    results = []
+    for s in students:
+        details = get_student_fee_details(s, target_month, target_year, payments=fees_map.get(s['id'], []))
+        monthly_fee = details['monthly_fee']
+        arrears = details['arrears']
+        ann_charges = float(s['annual_charges'] or 0.0) if 'annual_charges' in s.keys() else 0.0
+        paid_ac = ac_map.get(s['id'], 0.0)
+        unpaid_ac = max(0.0, ann_charges - paid_ac)
+        
+        remaining_tuition = details['remaining_payable']
+        total_payable = details['total_payable'] + unpaid_ac
+        remaining = remaining_tuition + unpaid_ac
+        paid = details['paid_this_month']
+        
+        if remaining <= 0 and (paid > 0 or total_payable == 0):
+            status = 'Paid'
+            status_badge = 'success'
+        elif paid > 0 and remaining > 0:
+            status = 'Partial'
+            status_badge = 'warning'
+        else:
+            status = 'Unpaid'
+            status_badge = 'danger'
+            
+        results.append({
+            'id': s['id'],
+            'name': s['name'],
+            'father_name': s['father_name'] or '',
+            'phone_number': s['phone_number'] or '',
+            'class': s['class'],
+            'campus_name': s['campus_name'] or '',
+            'monthly_fee': monthly_fee,
+            'annual_charges': ann_charges,
+            'unpaid_ac': unpaid_ac,
+            'arrears': arrears,
+            'current_month_remaining': details.get('current_month_remaining', monthly_fee),
+            'total_payable': total_payable,
+            'paid': paid,
+            'remaining': remaining,
+            'remaining_tuition': remaining_tuition,
+            'status': status,
+            'status_badge': status_badge
+        })
+        
+    return jsonify({
+        'status': 'success',
+        'query': q,
+        'count': len(results),
+        'results': results
+    })
+
 @app.route('/fee/class-sheet')
 @login_required
 def class_fee_sheet():
@@ -2055,12 +2332,16 @@ def class_fee_sheet():
         count_params.append(active_campus_id)
     count_query += " GROUP BY class"
     class_counts = {r['class']: r['count'] for r in conn.execute(count_query, count_params).fetchall()}
+    total_school_students = sum(class_counts.values())
     
     selected_class = request.args.get('class', '').strip()
-    if not selected_class and classes:
+    is_all_classes = (selected_class.lower() == 'all')
+    if is_all_classes:
+        selected_class = 'All'
+    elif not selected_class and classes:
         selected_class = classes[0]
         
-    # 2. Fetch students for the selected class
+    # 2. Fetch students for the selected class (or all classes)
     sheet_data = []
     total_class_monthly_fee = 0.0
     total_class_arrears = 0.0
@@ -2072,7 +2353,20 @@ def class_fee_sheet():
     partial_count = 0
     unpaid_count = 0
     
-    if selected_class:
+    if is_all_classes:
+        s_query = """
+            SELECT s.*, c.name as campus_name 
+            FROM students s 
+            LEFT JOIN campuses c ON s.campus_id = c.id 
+            WHERE (s.status IS NULL OR s.status = 'active')
+        """
+        s_params = []
+        if active_campus_id:
+            s_query += " AND s.campus_id = ?"
+            s_params.append(active_campus_id)
+        s_query += " ORDER BY s.class ASC, s.id ASC LIMIT 250"
+        students = conn.execute(s_query, s_params).fetchall()
+    elif selected_class:
         s_query = """
             SELECT s.*, c.name as campus_name 
             FROM students s 
@@ -2085,80 +2379,82 @@ def class_fee_sheet():
             s_params.append(active_campus_id)
         s_query += " ORDER BY s.id ASC"
         students = conn.execute(s_query, s_params).fetchall()
+    else:
+        students = []
         
-        student_ids = [s['id'] for s in students]
-        fees_map = {sid: [] for sid in student_ids}
-        ac_map = {sid: 0.0 for sid in student_ids}
-        if student_ids:
-            placeholders = ','.join(['?'] * len(student_ids))
-            all_fees = conn.execute(
-                f"SELECT student_id, month, year, paid_amount, date_paid, payment_mode, reference_no, notes FROM fees WHERE student_id IN ({placeholders})",
-                student_ids
-            ).fetchall()
-            for f in all_fees:
-                fees_map[f['student_id']].append(f)
-                
-            all_ac_payments = conn.execute(
-                f"SELECT student_id, SUM(paid_amount) as total_paid FROM annual_charges_payments WHERE student_id IN ({placeholders}) AND year = ? AND (notes IS NULL OR (LOWER(notes) NOT LIKE ? AND LOWER(notes) NOT LIKE ?)) GROUP BY student_id",
-                student_ids + [target_year, '%summer pack%', '%sp%']
-            ).fetchall()
-            for ac in all_ac_payments:
-                ac_map[ac['student_id']] = float(ac['total_paid'] or 0.0)
-                
-        for s in students:
-            details = get_student_fee_details(s, target_month, target_year, payments=fees_map.get(s['id'], []))
-            monthly_fee = details['monthly_fee']
-            arrears = details['arrears']
+    student_ids = [s['id'] for s in students]
+    fees_map = {sid: [] for sid in student_ids}
+    ac_map = {sid: 0.0 for sid in student_ids}
+    if student_ids:
+        placeholders = ','.join(['?'] * len(student_ids))
+        all_fees = conn.execute(
+            f"SELECT student_id, month, year, paid_amount, date_paid, payment_mode, reference_no, notes FROM fees WHERE student_id IN ({placeholders})",
+            student_ids
+        ).fetchall()
+        for f in all_fees:
+            fees_map[f['student_id']].append(f)
             
-            # Annual charges info
-            ann_charges = float(s['annual_charges'] or 0.0) if 'annual_charges' in s.keys() else 0.0
-            paid_ac = ac_map.get(s['id'], 0.0)
-            unpaid_ac = max(0.0, ann_charges - paid_ac)
+        all_ac_payments = conn.execute(
+            f"SELECT student_id, SUM(paid_amount) as total_paid FROM annual_charges_payments WHERE student_id IN ({placeholders}) AND year = ? AND (notes IS NULL OR (LOWER(notes) NOT LIKE ? AND LOWER(notes) NOT LIKE ?)) GROUP BY student_id",
+            student_ids + [target_year, '%summer pack%', '%sp%']
+        ).fetchall()
+        for ac in all_ac_payments:
+            ac_map[ac['student_id']] = float(ac['total_paid'] or 0.0)
             
-            remaining_tuition = details['remaining_payable']
-            total_payable = details['total_payable'] + unpaid_ac
-            remaining = remaining_tuition + unpaid_ac
-            paid = details['paid_this_month']
+    for s in students:
+        details = get_student_fee_details(s, target_month, target_year, payments=fees_map.get(s['id'], []))
+        monthly_fee = details['monthly_fee']
+        arrears = details['arrears']
+        
+        # Annual charges info
+        ann_charges = float(s['annual_charges'] or 0.0) if 'annual_charges' in s.keys() else 0.0
+        paid_ac = ac_map.get(s['id'], 0.0)
+        unpaid_ac = max(0.0, ann_charges - paid_ac)
+        
+        remaining_tuition = details['remaining_payable']
+        total_payable = details['total_payable'] + unpaid_ac
+        remaining = remaining_tuition + unpaid_ac
+        paid = details['paid_this_month']
+        
+        if remaining <= 0 and (paid > 0 or total_payable == 0):
+            status = 'Paid'
+            status_badge = 'success'
+            paid_count += 1
+        elif paid > 0 and remaining > 0:
+            status = 'Partial'
+            status_badge = 'warning'
+            partial_count += 1
+        else:
+            status = 'Unpaid'
+            status_badge = 'danger'
+            unpaid_count += 1
             
-            if remaining <= 0 and (paid > 0 or total_payable == 0):
-                status = 'Paid'
-                status_badge = 'success'
-                paid_count += 1
-            elif paid > 0 and remaining > 0:
-                status = 'Partial'
-                status_badge = 'warning'
-                partial_count += 1
-            else:
-                status = 'Unpaid'
-                status_badge = 'danger'
-                unpaid_count += 1
-                
-            sheet_data.append({
-                'id': s['id'],
-                'name': s['name'],
-                'father_name': s['father_name'] or '',
-                'phone_number': s['phone_number'] or '',
-                'class': s['class'],
-                'campus_name': s['campus_name'],
-                'monthly_fee': monthly_fee,
-                'annual_charges': ann_charges,
-                'unpaid_ac': unpaid_ac,
-                'arrears': arrears,
-                'current_month_remaining': details.get('current_month_remaining', monthly_fee),
-                'total_payable': total_payable,
-                'paid': paid,
-                'remaining': remaining,
-                'remaining_tuition': remaining_tuition,
-                'status': status,
-                'status_badge': status_badge
-            })
-            
-            total_class_monthly_fee += monthly_fee
-            total_class_arrears += arrears
-            total_class_unpaid_ac += unpaid_ac
-            total_class_payable += total_payable
-            total_class_paid += paid
-            total_class_remaining += remaining
+        sheet_data.append({
+            'id': s['id'],
+            'name': s['name'],
+            'father_name': s['father_name'] or '',
+            'phone_number': s['phone_number'] or '',
+            'class': s['class'],
+            'campus_name': s['campus_name'],
+            'monthly_fee': monthly_fee,
+            'annual_charges': ann_charges,
+            'unpaid_ac': unpaid_ac,
+            'arrears': arrears,
+            'current_month_remaining': details.get('current_month_remaining', monthly_fee),
+            'total_payable': total_payable,
+            'paid': paid,
+            'remaining': remaining,
+            'remaining_tuition': remaining_tuition,
+            'status': status,
+            'status_badge': status_badge
+        })
+        
+        total_class_monthly_fee += monthly_fee
+        total_class_arrears += arrears
+        total_class_unpaid_ac += unpaid_ac
+        total_class_payable += total_payable
+        total_class_paid += paid
+        total_class_remaining += remaining
             
     conn.close()
     
@@ -2169,6 +2465,8 @@ def class_fee_sheet():
                            classes=classes,
                            class_counts=class_counts,
                            selected_class=selected_class,
+                           is_all_classes=is_all_classes,
+                           total_school_students=total_school_students,
                            target_month=target_month,
                            target_year=target_year,
                            months=months,
@@ -2313,7 +2611,7 @@ def export_class_fee_sheet():
     conn = get_db_connection()
     s_query = "SELECT * FROM students WHERE 1=1"
     s_params = []
-    if target_class:
+    if target_class and target_class.lower() != 'all':
         s_query += " AND class = ?"
         s_params.append(target_class)
     if active_campus_id:
@@ -2594,6 +2892,31 @@ def fee_analytics():
 
     filtered_txs.sort(key=lambda x: (x.get('date_paid_clean') or '', x.get('id') or 0), reverse=True)
 
+    campus_daily_list = []
+    if period == 'daily':
+        campus_map = {}
+        for t in filtered_txs:
+            c_name = t.get('campus_name') or 'Unassigned'
+            if c_name not in campus_map:
+                campus_map[c_name] = {
+                    'campus_name': c_name,
+                    'count': 0,
+                    'total': 0.0,
+                    'tuition': 0.0,
+                    'annual': 0.0,
+                    'others': 0.0
+                }
+            campus_map[c_name]['count'] += 1
+            amt = float(t.get('paid_amount') or 0.0)
+            campus_map[c_name]['total'] += amt
+            if t.get('category') == 'Annual Charges':
+                campus_map[c_name]['annual'] += amt
+            elif t.get('category') == 'Monthly Tuition':
+                campus_map[c_name]['tuition'] += amt
+            else:
+                campus_map[c_name]['others'] += amt
+        campus_daily_list = sorted(campus_map.values(), key=lambda x: x['total'], reverse=True)
+
     years_list = [2024, 2025, 2026, 2027, 2028]
 
     return render_template('fee_analytics.html',
@@ -2607,6 +2930,7 @@ def fee_analytics():
                            payment_mode_filter=payment_mode_filter,
                            category_filter=category_filter,
                            class_filter=class_filter,
+                           campus_daily_list=campus_daily_list,
                            campuses=campuses,
                            classes=classes_list,
                            months=MONTH_NUM_TO_NAME,

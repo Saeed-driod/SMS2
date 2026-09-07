@@ -125,7 +125,152 @@
     </div>
 </div>
 
-<!-- Middle Double-Column Layout (Chart + Attendance/Class list) -->
+<!-- Daily Campus Collections & Entries Panel -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="glass-panel p-3 p-md-4">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3 pb-2 border-bottom border-secondary border-opacity-25">
+                <div>
+                    <h5 class="mb-1 text-white d-flex align-items-center gap-2 fs-6 fw-bold">
+                        <i class="fa-solid fa-calendar-day text-info"></i> Daily Campus Collections & Entries (روزانہ کیمپس فیس انٹریز)
+                    </h5>
+                    <p class="text-secondary small mb-0">Track daily entries count and total collected amounts across all campus branches.</p>
+                </div>
+                <!-- Date Filter Controls -->
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <form method="GET" action="{{ url_for('dashboard') }}" class="d-flex align-items-center gap-1" id="dailyDateForm">
+                        <a href="{{ url_for('dashboard', daily_date=prev_daily_date) }}" class="btn btn-outline-secondary btn-sm px-2.5" title="Previous Day">
+                            <i class="fa-solid fa-chevron-left"></i>
+                        </a>
+                        <input type="date" name="daily_date" class="form-control form-control-sm bg-dark text-light border-secondary" value="{{ daily_date }}" onchange="this.form.submit()" style="max-width: 145px;">
+                        <a href="{{ url_for('dashboard', daily_date=next_daily_date) }}" class="btn btn-outline-secondary btn-sm px-2.5" title="Next Day">
+                            <i class="fa-solid fa-chevron-right"></i>
+                        </a>
+                        <a href="{{ url_for('dashboard') }}" class="btn btn-sm btn-outline-info px-2.5" title="Reset to Today">
+                            Today
+                        </a>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Summary KPI Badges for Selected Date -->
+            <div class="row g-3 mb-3">
+                <div class="col-sm-6 col-md-4">
+                    <div class="p-3 rounded border border-info border-opacity-20 d-flex align-items-center justify-content-between" style="background: rgba(6, 182, 212, 0.05);">
+                        <div>
+                            <span class="text-secondary small d-block">Today's Entries (انٹریز کی تعداد)</span>
+                            <span class="fs-5 fw-bold text-info">{{ daily_total_entries }} Receipts</span>
+                        </div>
+                        <i class="fa-solid fa-receipt text-info fs-3 opacity-50"></i>
+                    </div>
+                </div>
+                <div class="col-sm-6 col-md-4">
+                    <div class="p-3 rounded border border-success border-opacity-20 d-flex align-items-center justify-content-between" style="background: rgba(16, 185, 129, 0.05);">
+                        <div>
+                            <span class="text-secondary small d-block">Today's Collection (کل رقم وصول شدہ)</span>
+                            <span class="fs-5 fw-bold text-success">Rs. {{ "{:,.0f}".format(daily_total_amount) }}</span>
+                        </div>
+                        <i class="fa-solid fa-sack-dollar text-success fs-3 opacity-50"></i>
+                    </div>
+                </div>
+                <div class="col-sm-12 col-md-4">
+                    <div class="p-3 rounded border border-purple border-opacity-20 d-flex align-items-center justify-content-between" style="background: rgba(168, 85, 247, 0.05);">
+                        <div>
+                            <span class="text-secondary small d-block">Active Reporting Campuses</span>
+                            <span class="fs-5 fw-bold text-white">
+                                {{ daily_campus_stats|selectattr('entries_count', 'gt', 0)|list|length }} of {{ daily_campus_stats|length }} Branches
+                            </span>
+                        </div>
+                        <i class="fa-solid fa-school-flag text-purple fs-3 opacity-50"></i>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Campus Breakdown Table -->
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0 text-white table-custom">
+                    <thead>
+                        <tr>
+                            <th>Campus Branch</th>
+                            <th>Code</th>
+                            <th class="text-center">Entries Count (کتنی انٹریز کیں)</th>
+                            <th class="text-end">Total Amount (کتنی رقم کی انٹریز)</th>
+                            <th class="text-end">Tuition Fee</th>
+                            <th class="text-end text-warning">Annual Charges</th>
+                            <th class="text-center">Status</th>
+                            <th class="text-center">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if daily_campus_stats %}
+                            {% for cs in daily_campus_stats %}
+                            <tr class="{% if cs.entries_count > 0 %}bg-dark bg-opacity-25{% endif %}">
+                                <td>
+                                    <strong class="text-white d-flex align-items-center gap-2">
+                                        <i class="fa-solid fa-school text-info small"></i> {{ cs.campus_name }}
+                                    </strong>
+                                </td>
+                                <td>
+                                    <code class="text-secondary bg-dark bg-opacity-50 px-2 py-0.5 rounded small">{{ cs.campus_code }}</code>
+                                </td>
+                                <td class="text-center">
+                                    {% if cs.entries_count > 0 %}
+                                    <span class="badge bg-info bg-opacity-25 text-info border border-info border-opacity-50 px-2.5 py-1 fs-7">
+                                        <i class="fa-solid fa-file-invoice me-1"></i> {{ cs.entries_count }} entries
+                                    </span>
+                                    {% else %}
+                                    <span class="badge bg-secondary bg-opacity-20 text-secondary px-2 py-1">0 entries</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end">
+                                    {% if cs.total_amount > 0 %}
+                                    <span class="fw-bold text-success fs-6">Rs. {{ "{:,.0f}".format(cs.total_amount) }}</span>
+                                    {% else %}
+                                    <span class="text-secondary small">Rs. 0</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end text-secondary small">
+                                    Rs. {{ "{:,.0f}".format(cs.fee_amount) }} ({{ cs.fee_count }})
+                                </td>
+                                <td class="text-end text-warning small">
+                                    Rs. {{ "{:,.0f}".format(cs.ac_amount) }} ({{ cs.ac_count }})
+                                </td>
+                                <td class="text-center">
+                                    {% if cs.entries_count > 0 %}
+                                    <span class="badge bg-success bg-opacity-20 text-success border border-success border-opacity-30 rounded-pill px-2.5 py-1 small">
+                                        <i class="fa-solid fa-circle-check me-1"></i> Entries Active
+                                    </span>
+                                    {% else %}
+                                    <span class="badge bg-dark border border-secondary text-secondary rounded-pill px-2.5 py-1 small">
+                                        No Entries
+                                    </span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    {% if cs.entries_count > 0 %}
+                                    <button type="button" class="btn btn-sm btn-outline-info py-1 px-2.5 rounded-pill small" 
+                                            onclick="openDailyEntriesModal({{ cs.campus_id }}, '{{ cs.campus_name }}', '{{ daily_date }}')">
+                                        <i class="fa-solid fa-list-ul me-1"></i> View Entries
+                                    </button>
+                                    {% else %}
+                                    <span class="text-secondary small">-</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="8" class="text-center text-secondary py-3">No campus data found.</td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Middle Double-Column Layout (Chart + Class list) -->
 <div class="dashboard-row-middle">
     <!-- Chart Column -->
     <div class="glass-panel">
@@ -135,34 +280,27 @@
         </div>
     </div>
 
-    <!-- Class breakdown & Attendance Column -->
+    <!-- Class breakdown Column -->
     <div class="d-flex flex-column gap-4">
-        <!-- Mock Student Attendance Summary (Matches layout in the image) -->
+        <!-- Daily Activity Quick Summary -->
         <div class="glass-panel">
-            <h5 class="mb-3 text-white"><i class="fa-solid fa-users-rectangle text-success me-2"></i>Student Attendance Status</h5>
+            <h5 class="mb-3 text-white"><i class="fa-solid fa-bolt text-warning me-2"></i>Today's Ledger Quick Status</h5>
             <div class="row g-2">
                 <div class="col-6">
-                    <div class="p-3 text-center rounded border border-success border-opacity-10" style="background: rgba(16, 185, 129, 0.04);">
-                        <h4 class="mb-1 text-success font-weight-bold">94.8%</h4>
-                        <span class="text-secondary small font-weight-bold text-uppercase">Present today</span>
+                    <div class="p-3 text-center rounded border border-success border-opacity-20" style="background: rgba(16, 185, 129, 0.04);">
+                        <h4 class="mb-1 text-success font-weight-bold">{{ daily_total_entries }}</h4>
+                        <span class="text-secondary small font-weight-bold text-uppercase">Entries Recorded</span>
                     </div>
                 </div>
                 <div class="col-6">
-                    <div class="p-3 text-center rounded border border-danger border-opacity-10" style="background: rgba(239, 68, 68, 0.04);">
-                        <h4 class="mb-1 text-danger font-weight-bold">3.2%</h4>
-                        <span class="text-secondary small font-weight-bold text-uppercase">Absent today</span>
+                    <div class="p-3 text-center rounded border border-info border-opacity-20" style="background: rgba(6, 182, 212, 0.04);">
+                        <h4 class="mb-1 text-info font-weight-bold" style="font-size: 1.15rem;">Rs. {{ "{:,.0f}".format(daily_total_amount) }}</h4>
+                        <span class="text-secondary small font-weight-bold text-uppercase">Revenue Today</span>
                     </div>
                 </div>
-                <div class="col-6">
-                    <div class="p-3 text-center rounded border border-warning border-opacity-10" style="background: rgba(245, 158, 11, 0.04);">
-                        <h4 class="mb-1 text-warning font-weight-bold">1.5%</h4>
-                        <span class="text-secondary small font-weight-bold text-uppercase">Late arrival</span>
-                    </div>
-                </div>
-                <div class="col-6">
-                    <div class="p-3 text-center rounded border border-info border-opacity-10" style="background: rgba(6, 182, 212, 0.04);">
-                        <h4 class="mb-1 text-info font-weight-bold">0.5%</h4>
-                        <span class="text-secondary small font-weight-bold text-uppercase">On Leave</span>
+                <div class="col-12">
+                    <div class="p-2.5 rounded border border-secondary border-opacity-25 text-center" style="background: rgba(255, 255, 255, 0.02);">
+                        <span class="text-secondary small">Viewing Date: <strong class="text-white">{{ daily_date }}</strong></span>
                     </div>
                 </div>
             </div>
@@ -240,6 +378,58 @@
                         {% endif %}
                     </tbody>
                 </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Daily Campus Entries Detail -->
+<div class="modal fade" id="dailyEntriesModal" tabindex="-1" aria-labelledby="dailyEntriesModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content text-light border-secondary" style="background: #111827; border: 1px solid rgba(255,255,255,0.15);">
+            <div class="modal-header border-secondary border-opacity-25">
+                <div>
+                    <h5 class="modal-title fw-bold text-white d-flex align-items-center gap-2" id="dailyEntriesModalLabel">
+                        <i class="fa-solid fa-receipt text-info"></i> <span id="modalCampusName">Campus</span> - Daily Entries
+                    </h5>
+                    <span class="text-secondary small" id="modalEntriesSubtitle">Date: 2026-09-07</span>
+                </div>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-0">
+                <div class="p-3 bg-dark bg-opacity-50 border-bottom border-secondary border-opacity-25 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <span class="badge bg-info bg-opacity-25 text-info border border-info border-opacity-50 px-3 py-2" id="modalEntriesCountBadge">
+                        0 Entries
+                    </span>
+                    <span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-50 px-3 py-2 fs-6" id="modalTotalAmountBadge">
+                        Rs. 0
+                    </span>
+                </div>
+                <div id="modalLoadingSpinner" class="text-center py-5">
+                    <div class="spinner-border text-info" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="text-secondary small mt-2">Loading transactions...</p>
+                </div>
+                <div class="table-responsive" id="modalTableContainer" style="display: none; max-height: 400px;">
+                    <table class="table table-hover align-middle mb-0 text-white table-custom">
+                        <thead style="position: sticky; top: 0; background: #0f172a; z-index: 5;">
+                            <tr>
+                                <th>Student</th>
+                                <th>Class</th>
+                                <th>Category / Month</th>
+                                <th class="text-end">Paid Amount</th>
+                                <th>Mode</th>
+                                <th>Collected By</th>
+                            </tr>
+                        </thead>
+                        <tbody id="modalEntriesTbody">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer border-secondary border-opacity-25">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
             </div>
         </div>
     </div>
@@ -324,5 +514,61 @@
             }
         });
     });
+
+    let dailyModalObj = null;
+    function openDailyEntriesModal(campusId, campusName, dateStr) {
+        document.getElementById('modalCampusName').textContent = campusName;
+        document.getElementById('modalEntriesSubtitle').textContent = 'Date: ' + dateStr;
+        document.getElementById('modalLoadingSpinner').style.display = 'block';
+        document.getElementById('modalTableContainer').style.display = 'none';
+        document.getElementById('modalEntriesTbody').innerHTML = '';
+        document.getElementById('modalEntriesCountBadge').textContent = 'Loading...';
+        document.getElementById('modalTotalAmountBadge').textContent = 'Rs. 0';
+
+        if (!dailyModalObj) {
+            dailyModalObj = new bootstrap.Modal(document.getElementById('dailyEntriesModal'));
+        }
+        dailyModalObj.show();
+
+        fetch(`/api/daily-campus-entries?campus_id=${campusId}&date=${encodeURIComponent(dateStr)}`)
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById('modalLoadingSpinner').style.display = 'none';
+                document.getElementById('modalTableContainer').style.display = 'block';
+                document.getElementById('modalEntriesCountBadge').textContent = data.total_entries + ' Receipts Recorded';
+                document.getElementById('modalTotalAmountBadge').textContent = 'Rs. ' + Math.round(data.total_amount).toLocaleString();
+
+                const tbody = document.getElementById('modalEntriesTbody');
+                tbody.innerHTML = '';
+
+                if (data.entries && data.entries.length > 0) {
+                    data.entries.forEach(e => {
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `
+                            <td>
+                                <span class="fw-bold text-white d-block">${e.student_name || 'N/A'}</span>
+                                <span class="text-secondary small">STD-${e.student_id}</span>
+                            </td>
+                            <td><span class="badge badge-class">Class ${e.student_class || '-'}</span></td>
+                            <td>
+                                <span class="text-info">${e.category || e.month}</span>
+                                ${e.notes ? `<span class="text-secondary small d-block">${e.notes}</span>` : ''}
+                            </td>
+                            <td class="text-end fw-bold text-success">Rs. ${Math.round(e.paid_amount || 0).toLocaleString()}</td>
+                            <td><span class="badge bg-dark border border-secondary text-secondary">${e.payment_mode || 'Voucher'}</span></td>
+                            <td class="text-secondary small">${e.collected_by || 'operator'}</td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="6" class="text-center text-secondary py-4">No entries recorded for this campus on this date.</td></tr>';
+                }
+            })
+            .catch(err => {
+                document.getElementById('modalLoadingSpinner').style.display = 'none';
+                document.getElementById('modalEntriesTbody').innerHTML = `<tr><td colspan="6" class="text-center text-danger py-4">Error loading entries: ${err}</td></tr>`;
+                document.getElementById('modalTableContainer').style.display = 'block';
+            });
+    }
 </script>
 {% endblock %}
