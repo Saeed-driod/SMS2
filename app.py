@@ -1071,10 +1071,22 @@ def api_daily_campus_entries():
     conn.close()
     
     combined = []
+    user_role = session.get('role')
+    user_campus = session.get('campus_id')
+
     for r in fee_records:
-        combined.append(dict(r))
+        item = dict(r)
+        item['receipt_type'] = 'fee'
+        rec_campus = item.get('campus_id')
+        item['can_delete'] = (user_role == 'admin' or (user_campus and rec_campus == user_campus))
+        combined.append(item)
+
     for r in ac_records:
-        combined.append(dict(r))
+        item = dict(r)
+        item['receipt_type'] = 'annual'
+        rec_campus = item.get('campus_id')
+        item['can_delete'] = (user_role == 'admin' or (user_campus and rec_campus == user_campus))
+        combined.append(item)
         
     combined.sort(key=lambda x: x['id'], reverse=True)
     return jsonify({
@@ -3135,7 +3147,7 @@ def fee_history(student_id):
     monthly_payments = conn.execute('''
         SELECT id, month, year, paid_amount, date_paid, 
                COALESCE(payment_mode, 'Voucher') as payment_mode, 
-               reference_no, notes, collected_by, 'Monthly Fee' as payment_type
+               reference_no, notes, collected_by, 'Monthly Fee' as payment_type, 'fee' as receipt_type
         FROM fees 
         WHERE student_id = ? 
         ORDER BY date_paid DESC, id DESC
@@ -3145,7 +3157,7 @@ def fee_history(student_id):
     annual_payments = conn.execute('''
         SELECT id, 'Annual Charges' as month, year, paid_amount, date_paid, 
                COALESCE(payment_mode, 'Voucher') as payment_mode, 
-               reference_no, notes, collected_by, 'Annual Charges' as payment_type
+               reference_no, notes, collected_by, 'Annual Charges' as payment_type, 'annual' as receipt_type
         FROM annual_charges_payments 
         WHERE student_id = ? 
         ORDER BY date_paid DESC, id DESC
@@ -3212,6 +3224,182 @@ def fee_history(student_id):
                            completion_rate=completion_rate,
                            school_name=settings.get('school_name', 'Alliedian School'),
                            bank_name=settings.get('bank_name', 'Bank Account'))
+
+@app.route('/fee/delete-entry', methods=['POST'])
+@login_required
+def fee_delete_entry():
+    """
+    Safely deletes/reverses an incorrect fee entry:
+    1. Validates operator/admin permissions for the campus.
+    2. Takes a complete snapshot and saves it in deleted_fee_logs for full auditability.
+    3. Removes the entry from fees or annual_charges_payments.
+    4. Due to dynamic ledger calculation, student dues and arrears immediately revert
+       back to their exact pre-entry state!
+    """
+    is_ajax = request.is_json or request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+    if request.is_json:
+        data = request.get_json() or {}
+        receipt_id = data.get('receipt_id')
+        receipt_type = (data.get('receipt_type') or 'fee').lower().strip()
+        reason = (data.get('reason') or '').strip()
+        notes = (data.get('notes') or '').strip()
+    else:
+        receipt_id = request.form.get('receipt_id', type=int)
+        receipt_type = (request.form.get('receipt_type') or 'fee').lower().strip()
+        reason = (request.form.get('reason') or '').strip()
+        notes = (request.form.get('notes') or '').strip()
+
+    if not receipt_id:
+        if is_ajax:
+            return jsonify({'status': 'error', 'message': 'Receipt ID is required.'}), 400
+        flash('Invalid receipt specified for deletion!', 'danger')
+        return redirect(request.referrer or url_for('dashboard'))
+
+    if not reason:
+        reason = 'Wrong entry correction'
+    full_reason = f"{reason} - {notes}" if notes else reason
+
+    active_campus_id = get_active_campus_id()
+    user_role = session.get('role')
+    username = session.get('username', 'operator')
+
+    conn = get_db_connection()
+    try:
+        if receipt_type in ('annual', 'annual_charges'):
+            entry = conn.execute('''
+                SELECT a.*, s.name as student_name, s.class as student_class, s.campus_id as student_campus_id
+                FROM annual_charges_payments a
+                JOIN students s ON a.student_id = s.id
+                WHERE a.id = ?
+            ''', (receipt_id,)).fetchone()
+            table_name = 'annual_charges_payments'
+            fee_month = 'Annual Charges'
+            fee_year = entry['year'] if entry else None
+        else:
+            entry = conn.execute('''
+                SELECT f.*, s.name as student_name, s.class as student_class, s.campus_id as student_campus_id
+                FROM fees f
+                JOIN students s ON f.student_id = s.id
+                WHERE f.id = ?
+            ''', (receipt_id,)).fetchone()
+            table_name = 'fees'
+            fee_month = entry['month'] if entry else None
+            fee_year = entry['year'] if entry else None
+
+        if not entry:
+            conn.close()
+            if is_ajax:
+                return jsonify({'status': 'error', 'message': 'Payment record not found or already deleted.'}), 404
+            flash('Payment record not found or already deleted.', 'warning')
+            return redirect(request.referrer or url_for('dashboard'))
+
+        # Permission check: operators can only delete receipts from their own campus
+        entry_campus_id = entry['campus_id'] or entry['student_campus_id']
+        if user_role != 'admin' and active_campus_id and entry_campus_id != active_campus_id:
+            conn.close()
+            if is_ajax:
+                return jsonify({'status': 'error', 'message': 'Access denied: cannot delete receipts from another campus.'}), 403
+            flash('Access denied! You can only delete entries from your assigned campus.', 'danger')
+            return redirect(request.referrer or url_for('dashboard'))
+
+        # Insert audit record into deleted_fee_logs
+        deleted_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        conn.execute('''
+            INSERT INTO deleted_fee_logs (
+                student_id, student_name, student_class, receipt_type, original_id,
+                paid_amount, fee_month, fee_year, date_paid, payment_mode, reference_no,
+                notes, collected_by, campus_id, reason, deleted_by, deleted_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            entry['student_id'],
+            entry['student_name'],
+            entry['student_class'],
+            receipt_type,
+            entry['id'],
+            float(entry['paid_amount'] or 0.0),
+            fee_month,
+            fee_year,
+            entry['date_paid'],
+            entry['payment_mode'],
+            entry['reference_no'],
+            entry['notes'],
+            entry['collected_by'],
+            entry_campus_id,
+            full_reason,
+            username,
+            deleted_at
+        ))
+
+        # Delete the wrong entry
+        conn.execute(f"DELETE FROM {table_name} WHERE id = ?", (receipt_id,))
+        conn.commit()
+
+        # Fetch updated student fee state to verify restored balances
+        student = conn.execute("SELECT * FROM students WHERE id = ?", (entry['student_id'],)).fetchone()
+        student_details = None
+        if student:
+            curr_month_name = MONTH_NUM_TO_NAME.get(datetime.now().month, 'March')
+            student_details = get_student_fee_details(student, curr_month_name, datetime.now().year)
+
+        conn.close()
+
+        success_msg = f"Receipt #{receipt_id} (Rs. {float(entry['paid_amount']):,.0f} for {entry['student_name']}) was successfully deleted. Student arrears & balance have reverted to pre-payment state."
+        if is_ajax:
+            return jsonify({
+                'status': 'success',
+                'message': success_msg,
+                'deleted_receipt_id': receipt_id,
+                'student_id': entry['student_id'],
+                'student_name': entry['student_name'],
+                'restored_arrears': student_details['arrears'] if student_details else 0,
+                'restored_payable': student_details['total_payable'] if student_details else 0
+            })
+
+        flash(success_msg, 'success')
+        return redirect(request.referrer or url_for('fee_history', student_id=entry['student_id']))
+
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        if is_ajax:
+            return jsonify({'status': 'error', 'message': str(e)}), 500
+        flash(f"Error deleting entry: {e}", 'danger')
+        return redirect(request.referrer or url_for('dashboard'))
+
+@app.route('/fee/deleted-entries')
+@login_required
+def deleted_fee_logs_view():
+    """Audit log of all deleted / reversed fee entries."""
+    active_campus_id = get_active_campus_id()
+    user_role = session.get('role')
+
+    conn = get_db_connection()
+    c_cond = ""
+    c_params = []
+    if user_role != 'admin' and active_campus_id:
+        c_cond = " WHERE d.campus_id = ?"
+        c_params.append(active_campus_id)
+    elif user_role == 'admin' and active_campus_id:
+        c_cond = " WHERE d.campus_id = ?"
+        c_params.append(active_campus_id)
+
+    query = f"""
+        SELECT d.*, c.name as campus_name
+        FROM deleted_fee_logs d
+        LEFT JOIN campuses c ON d.campus_id = c.id
+        {c_cond}
+        ORDER BY d.id DESC
+        LIMIT 300
+    """
+    logs = conn.execute(query, c_params).fetchall()
+    conn.close()
+
+    total_deleted_amount = sum(float(l['paid_amount'] or 0.0) for l in logs)
+
+    return render_template('deleted_fee_logs.html',
+                           logs=logs,
+                           total_deleted_count=len(logs),
+                           total_deleted_amount=total_deleted_amount)
 
 @app.route('/voucher/generate', methods=['GET', 'POST'])
 @login_required

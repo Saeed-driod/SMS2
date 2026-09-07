@@ -421,6 +421,7 @@
                                 <th class="text-end">Paid Amount</th>
                                 <th>Mode</th>
                                 <th>Collected By</th>
+                                <th class="text-center" style="width: 70px;">Action</th>
                             </tr>
                         </thead>
                         <tbody id="modalEntriesTbody">
@@ -544,6 +545,15 @@
                 if (data.entries && data.entries.length > 0) {
                     data.entries.forEach(e => {
                         const tr = document.createElement('tr');
+                        const canDel = e.can_delete !== false;
+                        const safeStudentName = (e.student_name || 'Student').replace(/'/g, "\\'");
+                        const actionBtn = canDel 
+                            ? `<button type="button" class="btn btn-outline-danger btn-sm px-2 py-1" title="Delete / Reverse Entry"
+                                       onclick="deleteDailyEntry(${e.id}, '${e.receipt_type || 'fee'}', '${safeStudentName}', ${Math.round(e.paid_amount || 0)}, ${campusId}, '${encodeURIComponent(campusName)}', '${dateStr}')">
+                                   <i class="fa-solid fa-trash-can"></i>
+                               </button>`
+                            : `<span class="text-secondary small">—</span>`;
+
                         tr.innerHTML = `
                             <td>
                                 <span class="fw-bold text-white d-block">${e.student_name || 'N/A'}</span>
@@ -557,18 +567,57 @@
                             <td class="text-end fw-bold text-success">Rs. ${Math.round(e.paid_amount || 0).toLocaleString()}</td>
                             <td><span class="badge bg-dark border border-secondary text-secondary">${e.payment_mode || 'Voucher'}</span></td>
                             <td class="text-secondary small">${e.collected_by || 'operator'}</td>
+                            <td class="text-center">${actionBtn}</td>
                         `;
                         tbody.appendChild(tr);
                     });
                 } else {
-                    tbody.innerHTML = '<tr><td colspan="6" class="text-center text-secondary py-4">No entries recorded for this campus on this date.</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="7" class="text-center text-secondary py-4">No entries recorded for this campus on this date.</td></tr>';
                 }
             })
             .catch(err => {
                 document.getElementById('modalLoadingSpinner').style.display = 'none';
-                document.getElementById('modalEntriesTbody').innerHTML = `<tr><td colspan="6" class="text-center text-danger py-4">Error loading entries: ${err}</td></tr>`;
+                document.getElementById('modalEntriesTbody').innerHTML = `<tr><td colspan="7" class="text-center text-danger py-4">Error loading entries: ${err}</td></tr>`;
                 document.getElementById('modalTableContainer').style.display = 'block';
             });
+    }
+
+    function deleteDailyEntry(receiptId, receiptType, studentName, amount, campusId, campusName, dateStr) {
+        const reason = prompt(`Reverse & Delete Entry #${receiptId} for ${studentName} (Rs. ${amount.toLocaleString()})?\n\nEnter reason for deletion (e.g. Wrong student, wrong amount, duplicate):`, 'Wrong student / entry error');
+        if (!reason || !reason.trim()) {
+            return;
+        }
+
+        const btn = event.target.closest('button');
+        if (btn) btn.disabled = true;
+
+        fetch('/fee/delete-entry', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: JSON.stringify({
+                receipt_id: receiptId,
+                receipt_type: receiptType,
+                reason: reason.trim()
+            })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === 'success') {
+                alert(`✓ Receipt #${receiptId} deleted successfully!\nStudent balance & arrears have been restored to pre-payment state.`);
+                // Reload modal data immediately
+                openDailyEntriesModal(campusId, decodeURIComponent(campusName), dateStr);
+            } else {
+                alert('Error: ' + (data.message || 'Could not delete entry'));
+                if (btn) btn.disabled = false;
+            }
+        })
+        .catch(err => {
+            alert('Request failed: ' + err);
+            if (btn) btn.disabled = false;
+        });
     }
 </script>
 {% endblock %}

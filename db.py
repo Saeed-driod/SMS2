@@ -307,6 +307,28 @@ def init_db():
                 campus_id INTEGER REFERENCES campuses(id)
             );
         ''')
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS deleted_fee_logs (
+                id SERIAL PRIMARY KEY,
+                student_id INTEGER NOT NULL,
+                student_name TEXT,
+                student_class TEXT,
+                receipt_type TEXT NOT NULL,
+                original_id INTEGER NOT NULL,
+                paid_amount REAL NOT NULL,
+                fee_month TEXT,
+                fee_year INTEGER,
+                date_paid TEXT,
+                payment_mode TEXT,
+                reference_no TEXT,
+                notes TEXT,
+                collected_by TEXT,
+                campus_id INTEGER REFERENCES campuses(id),
+                reason TEXT NOT NULL,
+                deleted_by TEXT NOT NULL,
+                deleted_at TEXT NOT NULL
+            );
+        ''')
 
     else:
         # SQLite Schema
@@ -423,6 +445,29 @@ def init_db():
                 campus_id INTEGER REFERENCES campuses(id)
             );
         ''')
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS deleted_fee_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                student_id INTEGER NOT NULL,
+                student_name TEXT,
+                student_class TEXT,
+                receipt_type TEXT NOT NULL,
+                original_id INTEGER NOT NULL,
+                paid_amount REAL NOT NULL,
+                fee_month TEXT,
+                fee_year INTEGER,
+                date_paid TEXT,
+                payment_mode TEXT,
+                reference_no TEXT,
+                notes TEXT,
+                collected_by TEXT,
+                campus_id INTEGER,
+                reason TEXT NOT NULL,
+                deleted_by TEXT NOT NULL,
+                deleted_at TEXT NOT NULL,
+                FOREIGN KEY (campus_id) REFERENCES campuses(id)
+            );
+        ''')
 
     # Seed default campuses if empty
     campus_count_row = conn.execute("SELECT COUNT(*) FROM campuses").fetchone()
@@ -474,6 +519,28 @@ def init_db():
     try:
         if is_postgres():
             conn.execute("ALTER TABLE students ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active'")
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS deleted_fee_logs (
+                    id SERIAL PRIMARY KEY,
+                    student_id INTEGER NOT NULL,
+                    student_name TEXT,
+                    student_class TEXT,
+                    receipt_type TEXT NOT NULL,
+                    original_id INTEGER NOT NULL,
+                    paid_amount REAL NOT NULL,
+                    fee_month TEXT,
+                    fee_year INTEGER,
+                    date_paid TEXT,
+                    payment_mode TEXT,
+                    reference_no TEXT,
+                    notes TEXT,
+                    collected_by TEXT,
+                    campus_id INTEGER REFERENCES campuses(id),
+                    reason TEXT NOT NULL,
+                    deleted_by TEXT NOT NULL,
+                    deleted_at TEXT NOT NULL
+                );
+            ''')
             conn.execute("CREATE INDEX IF NOT EXISTS idx_fees_student_id ON fees(student_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_ac_student_id ON annual_charges_payments(student_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_students_class ON students(class)")
@@ -481,12 +548,36 @@ def init_db():
             conn.execute("CREATE INDEX IF NOT EXISTS idx_fees_date_paid ON fees(date_paid)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_ac_date_paid ON annual_charges_payments(date_paid)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_students_name ON students(name)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_del_fee_student_id ON deleted_fee_logs(student_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_del_fee_deleted_at ON deleted_fee_logs(deleted_at)")
         else:
             cur = conn.cursor()
             cur.execute("PRAGMA table_info(students)")
             cols = [c[1] for c in cur.fetchall()]
             if 'status' not in cols:
                 conn.execute("ALTER TABLE students ADD COLUMN status TEXT DEFAULT 'active'")
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS deleted_fee_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    student_id INTEGER NOT NULL,
+                    student_name TEXT,
+                    student_class TEXT,
+                    receipt_type TEXT NOT NULL,
+                    original_id INTEGER NOT NULL,
+                    paid_amount REAL NOT NULL,
+                    fee_month TEXT,
+                    fee_year INTEGER,
+                    date_paid TEXT,
+                    payment_mode TEXT,
+                    reference_no TEXT,
+                    notes TEXT,
+                    collected_by TEXT,
+                    campus_id INTEGER,
+                    reason TEXT NOT NULL,
+                    deleted_by TEXT NOT NULL,
+                    deleted_at TEXT NOT NULL
+                );
+            ''')
             conn.execute("CREATE INDEX IF NOT EXISTS idx_fees_student_id ON fees(student_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_ac_student_id ON annual_charges_payments(student_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_students_class ON students(class)")
@@ -494,6 +585,8 @@ def init_db():
             conn.execute("CREATE INDEX IF NOT EXISTS idx_fees_date_paid ON fees(date_paid)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_ac_date_paid ON annual_charges_payments(date_paid)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_students_name ON students(name)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_del_fee_student_id ON deleted_fee_logs(student_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_del_fee_deleted_at ON deleted_fee_logs(deleted_at)")
     except Exception as e:
         print(f"Migration check warning: {e}")
 

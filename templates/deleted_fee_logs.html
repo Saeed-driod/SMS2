@@ -1,0 +1,160 @@
+{% extends 'base.html' %}
+
+{% block title %}Deleted Fee Entries Audit Log - Alliedian School{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <div>
+        <h1 class="page-title mb-0">
+            <i class="fa-solid fa-clock-rotate-left text-danger me-2"></i>Deleted Fee Entries Log
+        </h1>
+        <p class="text-secondary small mb-0">Complete audit trail of erroneous entries deleted and reversed</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="{{ url_for('fee_entry') }}" class="btn btn-outline-success btn-sm">
+            <i class="fa-solid fa-receipt me-1"></i> Fee Collection
+        </a>
+        <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary btn-sm">
+            <i class="fa-solid fa-house me-1"></i> Dashboard
+        </a>
+    </div>
+</div>
+
+<!-- Metric Stat Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-md-6 col-12">
+        <div class="analytics-card card-theme-red p-3">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+                <span class="card-label">Total Reversed Entries</span>
+                <i class="fa-solid fa-trash-can text-danger"></i>
+            </div>
+            <div class="card-num fs-4 text-danger">{{ total_deleted_count }} Receipts</div>
+            <span class="card-subtext">Incorrect payments removed & balances restored</span>
+        </div>
+    </div>
+    <div class="col-md-6 col-12">
+        <div class="analytics-card card-theme-purple p-3">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+                <span class="card-label">Total Amount Reversed</span>
+                <i class="fa-solid fa-rotate-left text-info"></i>
+            </div>
+            <div class="card-num fs-4 text-white">Rs. {{ "{:,.0f}".format(total_deleted_amount) }}</div>
+            <span class="card-subtext">Amounts accurately credited back to student arrears</span>
+        </div>
+    </div>
+</div>
+
+<!-- Audit Log Table -->
+<div class="glass-panel p-4">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <div>
+            <h5 class="text-white fs-6 fw-bold mb-0">
+                <i class="fa-solid fa-shield-halved text-warning me-2"></i>Audit Log Records ({{ logs|length }})
+            </h5>
+            <span class="text-secondary small">Entries are permanently tracked for security and transparency</span>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+            <input type="text" id="logFilterInput" class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="Search student, user, reason..." onkeyup="filterLogTable()">
+        </div>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 text-light table-custom" id="logTable">
+            <thead>
+                <tr class="text-secondary small text-uppercase border-secondary border-opacity-25">
+                    <th style="width: 80px;">Original #</th>
+                    <th>Student Details</th>
+                    <th>Category / Month</th>
+                    <th>Reversed Amount</th>
+                    <th>Original Payment</th>
+                    <th>Reason for Deletion</th>
+                    <th>Deleted By</th>
+                    <th>Deleted At</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if logs %}
+                    {% for l in logs %}
+                    <tr class="border-secondary border-opacity-10">
+                        <td class="font-monospace text-secondary small">
+                            <span class="badge bg-dark border border-secondary text-secondary">#{{ l.original_id }}</span>
+                        </td>
+                        <td>
+                            <a href="{{ url_for('fee_history', student_id=l.student_id) }}" class="text-white fw-bold text-decoration-none" title="View Current Student Ledger">
+                                {{ l.student_name or 'N/A' }}
+                            </a>
+                            <div class="text-secondary small">
+                                <span class="badge badge-class" style="font-size: 0.7rem;">Class {{ l.student_class or '-' }}</span>
+                                {% if l.campus_name %}
+                                <span class="badge bg-dark border border-secondary text-info" style="font-size: 0.7rem;">
+                                    <i class="fa-solid fa-school me-1"></i>{{ l.campus_name }}
+                                </span>
+                                {% endif %}
+                            </div>
+                        </td>
+                        <td>
+                            {% if l.receipt_type == 'annual' or l.fee_month == 'Annual Charges' %}
+                                <span class="badge bg-warning bg-opacity-20 text-warning border border-warning border-opacity-25">
+                                    <i class="fa-solid fa-shield me-1"></i>Annual {{ l.fee_year or '' }}
+                                </span>
+                            {% else %}
+                                <span class="badge bg-info bg-opacity-20 text-info border border-info border-opacity-25">
+                                    <i class="fa-solid fa-calendar me-1"></i>{{ l.fee_month or 'Tuition' }} {{ l.fee_year or '' }}
+                                </span>
+                            {% endif %}
+                        </td>
+                        <td class="fw-bold text-danger font-monospace">
+                            Rs. {{ "{:,.0f}".format(l.paid_amount) }}
+                        </td>
+                        <td class="text-secondary small">
+                            <div><i class="fa-solid fa-calendar-day me-1"></i>{{ l.date_paid or '—' }}</div>
+                            <span class="badge bg-dark border border-secondary text-secondary" style="font-size: 0.68rem;">{{ l.payment_mode or 'Voucher' }}</span>
+                        </td>
+                        <td>
+                            <div class="text-light fw-medium small">
+                                <i class="fa-solid fa-circle-exclamation text-warning me-1"></i>{{ l.reason or 'Wrong entry correction' }}
+                            </div>
+                        </td>
+                        <td>
+                            <span class="badge bg-primary bg-opacity-20 text-primary border border-primary border-opacity-25">
+                                <i class="fa-solid fa-user-check me-1"></i>{{ l.deleted_by or 'System' }}
+                            </span>
+                        </td>
+                        <td class="text-secondary small font-monospace">
+                            {{ l.deleted_at or '—' }}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="8" class="text-center text-secondary py-5">
+                            <i class="fa-solid fa-circle-check d-block fs-2 mb-2 text-success"></i>
+                            No deleted fee entries recorded. All transactions are active.
+                        </td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function filterLogTable() {
+    const input = document.getElementById("logFilterInput");
+    const filter = input.value.toLowerCase();
+    const table = document.getElementById("logTable");
+    const rows = table.getElementsByTagName("tr");
+
+    for (let i = 1; i < rows.length; i++) {
+        let rowText = rows[i].textContent || rows[i].innerText;
+        if (rowText.toLowerCase().indexOf(filter) > -1) {
+            rows[i].style.display = "";
+        } else {
+            rows[i].style.display = "none";
+        }
+    }
+}
+</script>
+{% endblock %}
