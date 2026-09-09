@@ -397,7 +397,7 @@ def import_main_campus():
                         if v is not None and str(v).strip() != '':
                             paid, note = parse_cell_amount(v, monthly_fee)
                             if paid > 0:
-                                year = 2025 if (mname in ('November', 'December') and c < 8) else 2026
+                                year = 2025 if mname in ('October', 'November', 'December') else 2026
                                 date_paid = f"{year}-{mnum:02d}-01"
                                 note_text = note if note else 'Imported from Excel'
                                 sheet_fee_data.append((student_idx, mname, year, paid, date_paid, campus_id, note_text))

@@ -976,16 +976,36 @@ def dashboard():
     recent_query += " ORDER BY f.id DESC LIMIT 5"
     recent_payments = conn.execute(recent_query, params).fetchall()
     
-    # Get monthly collections for chart (last 6 months)
+    # Get monthly collections for chart (last 6 chronological billing months up to current month)
+    curr_now = datetime.now()
+    curr_y = curr_now.year
+    curr_m = curr_now.month
+    
     chart_query = '''
-        SELECT month, year, SUM(paid_amount) as total, MAX(date_paid) as max_date
+        SELECT month, year, SUM(paid_amount) as total,
+               CASE month
+                   WHEN 'January' THEN 1 WHEN 'February' THEN 2 WHEN 'March' THEN 3
+                   WHEN 'April' THEN 4 WHEN 'May' THEN 5 WHEN 'June' THEN 6
+                   WHEN 'July' THEN 7 WHEN 'August' THEN 8 WHEN 'September' THEN 9
+                   WHEN 'October' THEN 10 WHEN 'November' THEN 11 WHEN 'December' THEN 12
+                   ELSE 0
+               END as m_num
         FROM fees
+        WHERE month IN ('January', 'February', 'March', 'April', 'May', 'June',
+                        'July', 'August', 'September', 'October', 'November', 'December')
+          AND (year < ? OR (year = ? AND CASE month
+                   WHEN 'January' THEN 1 WHEN 'February' THEN 2 WHEN 'March' THEN 3
+                   WHEN 'April' THEN 4 WHEN 'May' THEN 5 WHEN 'June' THEN 6
+                   WHEN 'July' THEN 7 WHEN 'August' THEN 8 WHEN 'September' THEN 9
+                   WHEN 'October' THEN 10 WHEN 'November' THEN 11 WHEN 'December' THEN 12
+                   ELSE 0
+               END <= ?))
     '''
-    chart_params = []
+    chart_params = [curr_y, curr_y, curr_m]
     if campus_id:
-        chart_query += " WHERE campus_id = ?"
-        chart_params = [campus_id]
-    chart_query += " GROUP BY year, month ORDER BY max_date DESC LIMIT 6"
+        chart_query += " AND campus_id = ?"
+        chart_params.append(campus_id)
+    chart_query += " GROUP BY year, month, m_num ORDER BY year DESC, m_num DESC LIMIT 6"
     
     chart_rows = conn.execute(chart_query, chart_params).fetchall()
     chart_rows = list(reversed(chart_rows))
@@ -4117,7 +4137,7 @@ def import_excel_file(filepath):
                     val = row[f_idx]
                     amt = clean_amount(val, monthly_fee)
                     if amt > 0:
-                        year = 2025 if (m_name in ('November', 'December') and f_idx < 8) else 2026
+                        year = 2025 if m_name in ('October', 'November', 'December') else 2026
                         if not earliest_payment_found or (year < start_year) or (year == start_year and m_val < start_month):
                             start_month = m_val
                             start_year = year
@@ -4134,7 +4154,7 @@ def import_excel_file(filepath):
                     val = row[f_idx]
                     amt = clean_amount(val, monthly_fee)
                     if amt > 0:
-                        year = 2025 if (m_name in ('November', 'December') and f_idx < 8) else 2026
+                        year = 2025 if m_name in ('October', 'November', 'December') else 2026
                         date_paid = f"{year}-{m_val:02d}-01"
                         cursor.execute('''
                             INSERT INTO fees (student_id, month, year, paid_amount, date_paid, campus_id)
