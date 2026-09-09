@@ -3655,7 +3655,7 @@ def voucher_print():
             payable_after_due = payable_by_due + (late_fee if payable_by_due > 0 else 0)
             
             vouchers.append({
-                'school_name': settings.get('school_name', 'Alliedian School Al-Rehman Campus, Okara'),
+                'school_name': settings.get('school_name', 'Allied School Al-Rehman Campus, Okara'),
                 'bank_name': settings.get('bank_name', 'MCB Bank Limited'),
                 'student': student,
                 'is_main_campus': is_main_campus,
@@ -3761,7 +3761,7 @@ def voucher_print():
         payable_after_due = payable_by_due + (late_fee if payable_by_due > 0 else 0)
         
         voucher_data = {
-            'school_name': settings.get('school_name', 'Alliedian School Al-Rehman Campus, Okara'),
+            'school_name': settings.get('school_name', 'Allied School Al-Rehman Campus, Okara'),
             'bank_name': settings.get('bank_name', 'MCB Bank Limited'),
             'student': student,
             'is_main_campus': is_main_campus,
