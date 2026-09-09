@@ -166,9 +166,6 @@
                         <td class="text-danger font-weight-bold">Rs. {{ "{:,.0f}".format(d.remaining) }}</td>
                         <td class="no-print text-end">
                             <div class="d-inline-flex gap-2">
-                                <a href="{{ url_for('fee_entry', student_id=d.id, month=target_month, year=target_year) }}" class="btn btn-outline-success btn-sm px-2.5" title="Collect Fee">
-                                    <i class="fa-solid fa-receipt"></i>
-                                </a>
                                 <a href="{{ url_for('fee_history', student_id=d.id) }}" class="btn btn-outline-light btn-sm px-2.5" title="Student Fee Ledger & Account Statement">
                                     <i class="fa-solid fa-book-bookmark"></i>
                                 </a>

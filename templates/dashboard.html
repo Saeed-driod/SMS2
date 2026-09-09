@@ -22,7 +22,6 @@
             <span class="text-secondary small font-weight-bold me-3">QUICK ACTIONS:</span>
             <a href="{{ url_for('student_add') }}" class="quick-toolbar-btn card-theme-green" title="Add Student"><i class="fa-solid fa-user-plus"></i></a>
             <a href="{{ url_for('class_fee_sheet') }}" class="quick-toolbar-btn card-theme-purple" title="Class Fee Register (Excel View)"><i class="fa-solid fa-table-list"></i></a>
-            <a href="{{ url_for('fee_entry') }}" class="quick-toolbar-btn card-theme-red" title="Fee Collection"><i class="fa-solid fa-receipt"></i></a>
             {% if session.role == 'admin' %}
             <a href="{{ url_for('fee_analytics') }}" class="quick-toolbar-btn card-theme-teal" title="Financial Analytics & Fee Reports"><i class="fa-solid fa-chart-pie"></i></a>
             {% endif %}
@@ -30,7 +29,6 @@
             <a href="{{ url_for('students_promotion') }}" class="quick-toolbar-btn card-theme-teal" title="Class Promotion Studio"><i class="fa-solid fa-graduation-cap"></i></a>
             <a href="{{ url_for('voucher_generate') }}" class="quick-toolbar-btn card-theme-blue" title="Voucher Studio"><i class="fa-solid fa-file-invoice-dollar"></i></a>
             <a href="{{ url_for('defaulters_view') }}" class="quick-toolbar-btn card-theme-yellow" title="Defaulters List"><i class="fa-solid fa-user-xmark"></i></a>
-            <a href="{{ url_for('import_excel_view') }}" class="quick-toolbar-btn card-theme-purple" title="Excel Import"><i class="fa-solid fa-file-excel"></i></a>
             <a href="{{ url_for('settings_view') }}" class="quick-toolbar-btn card-theme-orange" title="Settings"><i class="fa-solid fa-sliders"></i></a>
             {% if session.role == 'admin' %}
             <a href="{{ url_for('campuses_view') }}" class="quick-toolbar-btn card-theme-teal" title="Campus Manager"><i class="fa-solid fa-school"></i></a>
@@ -331,7 +329,7 @@
         <div class="glass-panel">
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <h5 class="mb-0 text-white"><i class="fa-solid fa-history text-primary me-2"></i>Recent Collections Ledger</h5>
-                <a href="{{ url_for('fee_entry') }}" class="btn btn-outline-info btn-sm px-3">Enter Payment Record</a>
+                <a href="{{ url_for('class_fee_sheet') }}" class="btn btn-outline-info btn-sm px-3"><i class="fa-solid fa-table-list me-1"></i> Class Fee Register</a>
             </div>
             <div class="table-responsive">
                 <table class="table table-custom">

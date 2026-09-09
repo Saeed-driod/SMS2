@@ -139,9 +139,6 @@
                         <td class="text-secondary small">{{ student.start_month }}/{{ student.start_year }}</td>
                         <td class="text-end">
                             <div class="d-inline-flex gap-2">
-                                <a href="{{ url_for('fee_entry', student_id=student.id) }}" class="btn btn-outline-success btn-sm px-2.5" title="Collect Fee">
-                                    <i class="fa-solid fa-receipt"></i>
-                                </a>
                                 <a href="{{ url_for('fee_history', student_id=student.id) }}" class="btn btn-outline-info btn-sm px-2.5" title="Student Fee Ledger & Account Statement">
                                     <i class="fa-solid fa-book-bookmark"></i>
                                 </a>
