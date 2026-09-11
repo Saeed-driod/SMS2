@@ -1994,21 +1994,39 @@ def api_fee_registry_search():
         
     conn = get_db_connection()
     
-    # Strip prefixes like STD- / std- / #
-    clean_digits = re.sub(r'^[a-zA-Z\-_#]+', '', q).strip()
-    
     where_clauses = ["(s.status IS NULL OR s.status = 'active')"]
     params = []
     
-    search_or = ["s.name LIKE ?", "s.father_name LIKE ?", "s.phone_number LIKE ?"]
-    params.extend([f"%{q}%", f"%{q}%", f"%{q}%"])
+    id_match = re.match(r'^(?:std[\s\-_#]*)?(\d+)$', q, re.IGNORECASE)
+    words = q.split()
+    order_by = "s.class ASC, s.name ASC"
+    order_params = []
     
-    if clean_digits.isdigit():
-        search_or.append("s.id = ?")
-        params.append(int(clean_digits))
-        
-    where_clauses.append(f"({' OR '.join(search_or)})")
-    
+    if id_match:
+        exact_id = int(id_match.group(1))
+        q_lower = f"%{q.lower()}%"
+        where_clauses.append("""(
+            s.id = ? 
+            OR CAST(s.id AS TEXT) LIKE ? 
+            OR LOWER(s.name) LIKE ? 
+            OR LOWER(COALESCE(s.father_name, '')) LIKE ? 
+            OR LOWER(COALESCE(s.phone_number, '')) LIKE ?
+        )""")
+        params.extend([exact_id, f"%{exact_id}%", q_lower, q_lower, q_lower])
+        order_by = "CASE WHEN s.id = ? THEN 0 ELSE 1 END, s.class ASC, s.name ASC"
+        order_params = [exact_id]
+    elif words:
+        for word in words:
+            w_lower = f"%{word.lower()}%"
+            where_clauses.append("""(
+                LOWER(s.name) LIKE ? 
+                OR LOWER(COALESCE(s.father_name, '')) LIKE ? 
+                OR LOWER(COALESCE(s.phone_number, '')) LIKE ? 
+                OR LOWER(COALESCE(s.class, '')) LIKE ? 
+                OR CAST(s.id AS TEXT) LIKE ?
+            )""")
+            params.extend([w_lower, w_lower, w_lower, w_lower, f"%{word}%"])
+            
     if active_campus_id:
         where_clauses.append("s.campus_id = ?")
         params.append(active_campus_id)
@@ -2023,11 +2041,11 @@ def api_fee_registry_search():
         FROM students s
         LEFT JOIN campuses c ON s.campus_id = c.id
         WHERE {where_sql}
-        ORDER BY s.class ASC, s.name ASC
+        ORDER BY {order_by}
         LIMIT 60
     """
     
-    students = conn.execute(query, params).fetchall()
+    students = conn.execute(query, params + order_params).fetchall()
     student_ids = [s['id'] for s in students]
     
     fees_map = {sid: [] for sid in student_ids}

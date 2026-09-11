@@ -915,27 +915,29 @@ function escapeQuoteJs(str) {
 
 // Live client-side filtering across currently rendered rows
 function filterSheetTable() {
-    const input = document.getElementById('sheetSearchInput').value.toLowerCase().trim();
-    const cleanDigits = input.replace(/^[a-z]+[-_]?/i, '');
+    const rawInput = document.getElementById('sheetSearchInput').value.toLowerCase().trim();
     const rows = document.querySelectorAll('.sheet-row');
+    const terms = rawInput.split(/\s+/).filter(Boolean);
     
     rows.forEach(row => {
-        const name = row.getAttribute('data-name') || '';
-        const father = row.getAttribute('data-father') || '';
-        const id = row.getAttribute('data-id') || '';
-        const barcode = row.getAttribute('data-barcode') || '';
+        const name = (row.getAttribute('data-name') || '').toLowerCase();
+        const father = (row.getAttribute('data-father') || '').toLowerCase();
+        const id = (row.getAttribute('data-id') || '').toLowerCase();
+        const barcode = (row.getAttribute('data-barcode') || '').toLowerCase();
         const status = row.getAttribute('data-status') || '';
         
         const activeStatusBtn = document.querySelector('.status-btn.active');
         const activeStatus = activeStatusBtn ? activeStatusBtn.textContent.split(' ')[0].trim() : 'All';
         
-        const matchesSearch = !input || 
-            name.includes(input) || 
-            father.includes(input) || 
-            id === input || 
-            id === cleanDigits ||
-            id.includes(input) ||
-            barcode.includes(input);
+        const matchesSearch = terms.length === 0 || terms.every(term => {
+            const cleanDigits = term.replace(/^[a-z]+[-_]?/i, '');
+            return name.includes(term) || 
+                   father.includes(term) || 
+                   id === term || 
+                   (cleanDigits && id === cleanDigits) ||
+                   id.includes(term) || 
+                   barcode.includes(term);
+        });
             
         const matchesStatus = activeStatus === 'All' || status === activeStatus;
         
