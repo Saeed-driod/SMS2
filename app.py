@@ -176,10 +176,19 @@ def get_student_fee_details(student, target_month_name, target_year, months=1, p
             paid_target_month += p_amount
             
     arrears = max(0.0, total_due_prior - total_paid_prior)
-    current_month_due = monthly_fee * months
-    current_month_remaining = max(0.0, current_month_due - paid_target_month)
-    total_payable = current_month_due + arrears
-    remaining_payable = max(0.0, total_payable - paid_target_month)
+    
+    # Check if target month is before student's billing start month
+    is_before_start = (target_year < start_year) or (target_year == start_year and target_month_num < start_month)
+    if is_before_start:
+        current_month_due = 0.0
+        current_month_remaining = 0.0
+        total_payable = arrears
+        remaining_payable = max(0.0, arrears - paid_target_month)
+    else:
+        current_month_due = monthly_fee * months
+        current_month_remaining = max(0.0, current_month_due - paid_target_month)
+        total_payable = current_month_due + arrears
+        remaining_payable = max(0.0, total_payable - paid_target_month)
     
     return {
         'monthly_fee': monthly_fee,
@@ -191,7 +200,8 @@ def get_student_fee_details(student, target_month_name, target_year, months=1, p
         'paid_this_month': paid_target_month,
         'remaining_payable': remaining_payable,
         'months_billed_prior': months_diff,
-        'months_to_pay': months
+        'months_to_pay': months,
+        'is_before_start': is_before_start
     }
 
 def record_tuition_payment(conn, student, start_month_name, start_year, paid_amount=0.0,
@@ -1282,6 +1292,19 @@ def student_add():
             ''', (student_id, other_title, start_year, other_amount, payment_date, other_mode, other_receipt, other_notes, collected_by, student_campus_id))
             total_initial_paid += other_amount
             initial_summaries.append(f"{other_title}: Rs. {other_amount:,.0f}")
+
+        ac_amount = float(request.form.get('ac_amount', 0) or 0)
+        if ac_amount > 0 and student_id:
+            ac_mode = request.form.get('ac_mode', 'Voucher').strip()
+            ac_receipt = request.form.get('ac_receipt', '').strip()
+            ac_year = int(request.form.get('ac_year', start_year))
+            ac_notes = request.form.get('ac_notes', '').strip() or f'Annual Charges {ac_year} Paid at Admission'
+            conn.execute('''
+                INSERT INTO annual_charges_payments (student_id, year, paid_amount, date_paid, payment_mode, reference_no, notes, collected_by, campus_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (student_id, ac_year, ac_amount, payment_date, ac_mode, ac_receipt, ac_notes, collected_by, student_campus_id))
+            total_initial_paid += ac_amount
+            initial_summaries.append(f"Annual Charges: Rs. {ac_amount:,.0f}")
             
         conn.commit()
         conn.close()
@@ -1445,6 +1468,28 @@ def student_edit(id):
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (id, other_title, start_year, other_amount, payment_date, other_mode, other_receipt, other_notes, collected_by, student_campus_id))
 
+        # 5. Annual Charges (AC) Payment
+        ac_fee_id = request.form.get('ac_fee_id', '').strip()
+        ac_amount = float(request.form.get('ac_amount', 0) or 0)
+        ac_mode = request.form.get('ac_mode', 'Voucher').strip()
+        ac_receipt = request.form.get('ac_receipt', '').strip()
+        ac_year = int(request.form.get('ac_year', start_year))
+        ac_notes = request.form.get('ac_notes', '').strip() or f'Annual Charges {ac_year} Paid at Admission'
+        if ac_fee_id and ac_fee_id.isdigit():
+            if ac_amount > 0:
+                conn.execute('''
+                    UPDATE annual_charges_payments 
+                    SET year = ?, paid_amount = ?, date_paid = ?, payment_mode = ?, reference_no = ?, notes = ?, campus_id = ?
+                    WHERE id = ? AND student_id = ?
+                ''', (ac_year, ac_amount, payment_date, ac_mode, ac_receipt, ac_notes, student_campus_id, int(ac_fee_id), id))
+            else:
+                conn.execute("DELETE FROM annual_charges_payments WHERE id = ? AND student_id = ?", (int(ac_fee_id), id))
+        elif ac_amount > 0:
+            conn.execute('''
+                INSERT INTO annual_charges_payments (student_id, year, paid_amount, date_paid, payment_mode, reference_no, notes, collected_by, campus_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (id, ac_year, ac_amount, payment_date, ac_mode, ac_receipt, ac_notes, collected_by, student_campus_id))
+
         conn.commit()
         conn.close()
         
@@ -1489,8 +1534,12 @@ def student_edit(id):
                     first_month_row = f
                     break
 
+    # Fetch Annual Charges payment for this student
+    ac_records = conn.execute("SELECT * FROM annual_charges_payments WHERE student_id = ? AND year = ? ORDER BY id DESC", (id, start_y)).fetchall()
+    ac_row = ac_records[0] if ac_records else None
+
     initial_payment_date = datetime.now().strftime('%Y-%m-%d')
-    for candidate in [books_row, adm_row, first_month_row, other_row]:
+    for candidate in [books_row, adm_row, first_month_row, other_row, ac_row]:
         if candidate and candidate['date_paid']:
             initial_payment_date = candidate['date_paid']
             break
@@ -1526,6 +1575,14 @@ def student_edit(id):
             'mode': other_row['payment_mode'] if other_row else 'Voucher',
             'receipt': other_row['reference_no'] if other_row else '',
             'notes': other_row['notes'] if other_row else ''
+        },
+        'annual_charges': {
+            'id': ac_row['id'] if ac_row else '',
+            'amount': float(ac_row['paid_amount'] or 0) if ac_row else 0.0,
+            'mode': ac_row['payment_mode'] if ac_row else 'Voucher',
+            'receipt': ac_row['reference_no'] if ac_row else '',
+            'year': ac_row['year'] if ac_row else start_y,
+            'notes': ac_row['notes'] if ac_row else ''
         }
     }
     
@@ -1534,7 +1591,8 @@ def student_edit(id):
         (initial_payments['admission']['amount'] > 0) or
         (initial_payments['first_month']['amount'] > 0) or
         (initial_payments['other']['amount'] > 0) or
-        books_row or adm_row or first_month_row or other_row
+        (initial_payments['annual_charges']['amount'] > 0) or
+        books_row or adm_row or first_month_row or other_row or ac_row
     )
     
     current_year = datetime.now().year
@@ -3281,6 +3339,7 @@ def voucher_print():
 
     other_dues = request.args.get('other_dues', 0.0, type=float)
     other_dues_desc = request.args.get('other_dues_desc', '').strip()
+    include_ac = request.args.get('include_ac', '1') == '1'
     if not other_dues_desc:
         other_dues_desc = f"Annual subscription {year}"
 
@@ -3380,7 +3439,7 @@ def voucher_print():
             # Calculate unpaid annual charges in memory
             annual_charges = float(student['annual_charges'] or 0.0) if 'annual_charges' in student.keys() else 0.0
             paid_annual = ac_map.get(sid, 0.0)
-            unpaid_annual = max(0.0, annual_charges - paid_annual) if annual_charges > 0 else 0.0
+            unpaid_annual = max(0.0, annual_charges - paid_annual) if (annual_charges > 0 and include_ac) else 0.0
             
             # Auto-include unpaid annual charges (if no manual other_dues set)
             if other_dues > 0:
@@ -3393,21 +3452,23 @@ def voucher_print():
                 auto_other_dues = 0.0
                 auto_other_dues_desc = ""
             
-            # Distribute paid_this_month across arrears and generated months
+            # Distribute paid_this_month across generated months first, then any remainder across arrears
+            display_arrears = fee_details['arrears']
             available_paid = fee_details['paid_this_month']
-            if available_paid >= fee_details['arrears']:
-                available_paid -= fee_details['arrears']
-                display_arrears = 0
-            else:
-                display_arrears = fee_details['arrears'] - available_paid
-                available_paid = 0
                 
+            student_start_m = int(student['start_month'] or 3)
+            student_start_y = int(student['start_year'] or 2026)
+            is_student_before_start = (year < student_start_y) or (year == student_start_y and start_month_num < student_start_m)
+
             multi_months_list = []
             total_months_fee = 0
             for i in range(num_months):
                 m_num = (start_month_num - 1 + i) % 12 + 1
                 m_name = MONTH_NUM_TO_NAME.get(m_num, month)
-                if available_paid >= fee_details['monthly_fee']:
+                m_before_start = (year < student_start_y) or (year == student_start_y and m_num < student_start_m)
+                if m_before_start:
+                    m_fee = 0
+                elif available_paid >= fee_details['monthly_fee']:
                     m_fee = 0
                     available_paid -= fee_details['monthly_fee']
                 else:
@@ -3415,6 +3476,9 @@ def voucher_print():
                     available_paid = 0
                 multi_months_list.append({'name': m_name, 'fee': m_fee})
                 total_months_fee += m_fee
+                
+            if available_paid > 0:
+                display_arrears = max(0.0, display_arrears - available_paid)
                 
             fee_details['remaining_payable'] = display_arrears + total_months_fee
             
@@ -3427,6 +3491,10 @@ def voucher_print():
 
             current_other_dues = auto_other_dues
             payable_by_due = fee_details['remaining_payable'] + current_other_dues
+
+            # Skip generating class voucher if student has no dues to pay
+            if display_arrears <= 0 and current_other_dues <= 0 and total_months_fee <= 0:
+                continue
             
             # Determine due date (use default if not supplied)
             if not due_date:
@@ -3490,21 +3558,22 @@ def voucher_print():
         campus_name = (student['campus_name'] or '').strip().lower() if 'campus_name' in student.keys() and student['campus_name'] else ''
         is_main_campus = bool(campus_code == 'main_campus' or 'main' in campus_name or not student['campus_id'])
         
-        # Distribute paid_this_month across arrears and generated months
+        # Distribute paid_this_month across generated months first, then any remainder across arrears
+        display_arrears = fee_details['arrears']
         available_paid = fee_details['paid_this_month']
-        if available_paid >= fee_details['arrears']:
-            available_paid -= fee_details['arrears']
-            display_arrears = 0
-        else:
-            display_arrears = fee_details['arrears'] - available_paid
-            available_paid = 0
             
+        student_start_m = int(student['start_month'] or 3)
+        student_start_y = int(student['start_year'] or 2026)
+
         multi_months_list = []
         total_months_fee = 0
         for i in range(num_months):
             m_num = (start_month_num - 1 + i) % 12 + 1
             m_name = MONTH_NUM_TO_NAME.get(m_num, month)
-            if available_paid >= fee_details['monthly_fee']:
+            m_before_start = (year < student_start_y) or (year == student_start_y and m_num < student_start_m)
+            if m_before_start:
+                m_fee = 0
+            elif available_paid >= fee_details['monthly_fee']:
                 m_fee = 0
                 available_paid -= fee_details['monthly_fee']
             else:
@@ -3513,8 +3582,11 @@ def voucher_print():
             multi_months_list.append({'name': m_name, 'fee': m_fee})
             total_months_fee += m_fee
             
+        if available_paid > 0:
+            display_arrears = max(0.0, display_arrears - available_paid)
+            
         # Auto-include unpaid annual charges for single student
-        unpaid_annual = get_unpaid_annual_charges(student, year)
+        unpaid_annual = get_unpaid_annual_charges(student, year) if include_ac else 0.0
         if other_dues > 0:
             auto_other_dues = other_dues
             auto_other_dues_desc = other_dues_desc or f"Annual Charges {year}"

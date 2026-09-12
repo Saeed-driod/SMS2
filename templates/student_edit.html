@@ -171,6 +171,7 @@
                                 <input type="hidden" name="admission_fee_id" value="{{ initial_payments.admission.id }}">
                                 <input type="hidden" name="first_month_fee_id" value="{{ initial_payments.first_month.id }}">
                                 <input type="hidden" name="other_fee_id" value="{{ initial_payments.other.id }}">
+                                <input type="hidden" name="ac_fee_id" value="{{ initial_payments.annual_charges.id }}">
 
                                 <!-- Payment Date & Common Details -->
                                 <div class="row g-3 mb-4 p-3 rounded bg-dark bg-opacity-50 border border-secondary border-opacity-25">
@@ -348,6 +349,51 @@
                                             <input type="text" class="form-control form-control-sm mt-2" name="other_notes" value="{{ initial_payments.other.notes }}" placeholder="Notes / Details">
                                         </div>
                                     </div>
+
+                                    <!-- 5. Annual Charges (AC) Payment -->
+                                    <div class="col-md-6">
+                                        <div class="p-3 rounded border border-warning border-opacity-25 h-100 bg-dark bg-opacity-25">
+                                            <div class="d-flex align-items-center justify-content-between mb-2">
+                                                <label class="form-label text-white fw-bold mb-0 d-flex align-items-center gap-2">
+                                                    <i class="fa-solid fa-coins text-warning"></i> Annual Charges (AC) Paid
+                                                </label>
+                                                <div class="d-flex gap-1 align-items-center">
+                                                    {% if initial_payments.annual_charges.id %}
+                                                    <span class="badge bg-warning bg-opacity-20 text-warning" style="font-size: 0.7rem;">Entry #{{ initial_payments.annual_charges.id }}</span>
+                                                    {% endif %}
+                                                    <button type="button" class="btn btn-outline-warning btn-xs py-0 px-2" style="font-size: 0.68rem;" onclick="copyAnnualCharges()">Copy AC Amount</button>
+                                                </div>
+                                            </div>
+                                            <div class="input-group input-group-sm mb-2">
+                                                <span class="input-group-text bg-transparent text-secondary">Rs.</span>
+                                                <input type="number" step="any" min="0" class="form-control font-monospace" id="ac_amount" name="ac_amount" placeholder="0" value="{{ initial_payments.annual_charges.amount or 0 }}" oninput="calcTotalInitial()">
+                                            </div>
+                                            <div class="row g-2">
+                                                <div class="col-6">
+                                                    <select class="form-select form-select-sm payment-mode-select" id="ac_mode" name="ac_mode">
+                                                        <option value="Voucher" {% if initial_payments.annual_charges.mode == 'Voucher' %}selected{% endif %}>Voucher / Cash</option>
+                                                        <option value="Bank" {% if initial_payments.annual_charges.mode == 'Bank' %}selected{% endif %}>Bank</option>
+                                                        <option value="Online" {% if initial_payments.annual_charges.mode == 'Online' %}selected{% endif %}>Online App</option>
+                                                    </select>
+                                                </div>
+                                                <div class="col-6">
+                                                    <input type="text" class="form-control form-control-sm" name="ac_receipt" value="{{ initial_payments.annual_charges.receipt }}" placeholder="Slip/Receipt #">
+                                                </div>
+                                            </div>
+                                            <div class="row g-2 mt-1">
+                                                <div class="col-6">
+                                                    <select class="form-select form-select-sm" name="ac_year">
+                                                        {% for y in range(current_year - 1, current_year + 3) %}
+                                                        <option value="{{ y }}" {% if y == initial_payments.annual_charges.year %}selected{% endif %}>Year {{ y }}</option>
+                                                        {% endfor %}
+                                                    </select>
+                                                </div>
+                                                <div class="col-6">
+                                                    <input type="text" class="form-control form-control-sm" name="ac_notes" value="{{ initial_payments.annual_charges.notes }}" placeholder="Notes (e.g. AC Paid at Admission)">
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
 
                                 <!-- Total Initial Payment Summary Banner -->
@@ -408,13 +454,22 @@
         }
     }
 
+    function copyAnnualCharges() {
+        const acVal = document.getElementById('annual_charges').value;
+        if (acVal && parseFloat(acVal) > 0) {
+            document.getElementById('ac_amount').value = acVal;
+            calcTotalInitial();
+        }
+    }
+
     function calcTotalInitial() {
         const books = parseFloat(document.getElementById('books_amount').value) || 0;
         const admission = parseFloat(document.getElementById('admission_fee_amount').value) || 0;
         const firstMonth = parseFloat(document.getElementById('first_month_amount').value) || 0;
         const other = parseFloat(document.getElementById('other_amount').value) || 0;
+        const ac = parseFloat(document.getElementById('ac_amount')?.value) || 0;
 
-        const total = books + admission + firstMonth + other;
+        const total = books + admission + firstMonth + other + ac;
         const totalDisplay = document.getElementById('total_initial_display');
         if (totalDisplay) {
             totalDisplay.textContent = 'Rs. ' + total.toLocaleString('en-US');
@@ -425,6 +480,7 @@
         if (admission > 0) parts.push(`Admission: Rs. ${admission.toLocaleString('en-US')}`);
         if (firstMonth > 0) parts.push(`1st Month: Rs. ${firstMonth.toLocaleString('en-US')}`);
         if (other > 0) parts.push(`Other: Rs. ${other.toLocaleString('en-US')}`);
+        if (ac > 0) parts.push(`AC: Rs. ${ac.toLocaleString('en-US')}`);
 
         const breakdown = document.getElementById('initial_breakdown_text');
         if (breakdown) {
