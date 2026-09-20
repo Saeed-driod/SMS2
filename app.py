@@ -454,7 +454,7 @@ def repair_existing_lump_sum_fees(conn):
 
 @app.route('/health')
 def health():
-    return jsonify({"status": "ok", "version": "v2.3-optimized-export", "time": str(datetime.now())})
+    return jsonify({"status": "ok", "version": "v2.4-class-register-format", "time": str(datetime.now())})
 
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -563,174 +563,405 @@ def clear_campus_data(campus_id):
 
 
 def generate_excel_workbook(students, fees, annual_charges, title_name="Report", fees_map=None):
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
     curr_month = MONTH_NUM_TO_NAME[datetime.now().month]
     curr_year = datetime.now().year
-    
-    # Pre-map fees by student_id if not provided
-    if fees_map is None:
-        fees_map = {}
+
+    # Map fees by student_id
+    if fees_map is not None:
+        fees_by_student = fees_map
+    else:
+        fees_by_student = {}
         if fees:
             for f in fees:
                 try:
                     sid = f['student_id']
-                    if sid not in fees_map:
-                        fees_map[sid] = []
-                    fees_map[sid].append(f)
+                    if sid not in fees_by_student:
+                        fees_by_student[sid] = []
+                    fees_by_student[sid].append(f)
                 except (KeyError, IndexError):
                     pass
 
-    # If fees were provided without student_id or not matching, batch fetch in one single query
-    if students and not fees_map:
-        student_ids = [s['id'] for s in students if 'id' in s.keys()]
-        if student_ids:
-            conn = get_db_connection()
-            campus_ids = list({s['campus_id'] for s in students if 'campus_id' in s.keys() and s['campus_id']})
-            if len(campus_ids) == 1:
-                batch_fees = conn.execute(
-                    "SELECT student_id, month, year, paid_amount, notes FROM fees WHERE campus_id = ?",
-                    (campus_ids[0],)
-                ).fetchall()
-            else:
-                placeholders = ','.join(['?'] * len(student_ids))
-                batch_fees = conn.execute(
-                    f"SELECT student_id, month, year, paid_amount, notes FROM fees WHERE student_id IN ({placeholders})",
-                    student_ids
-                ).fetchall()
-            conn.close()
-            for bf in batch_fees:
-                sid = bf['student_id']
-                if sid not in fees_map:
-                    fees_map[sid] = []
-                fees_map[sid].append(bf)
+    # Map annual charges by student_id
+    ac_by_student = {}
+    if annual_charges:
+        for a in annual_charges:
+            try:
+                sid = a['student_id']
+                if sid not in ac_by_student:
+                    ac_by_student[sid] = {'ac': 0.0, 'sp': 0.0}
+                notes = str(a['notes'] or '').strip().lower()
+                amt = float(a['paid_amount'] or 0.0)
+                if 'sp' in notes or 'summer pack' in notes:
+                    ac_by_student[sid]['sp'] += amt
+                else:
+                    ac_by_student[sid]['ac'] += amt
+            except (KeyError, IndexError, ValueError):
+                pass
 
-    summary_data = []
-    for s in students:
-        details = get_student_fee_details(s, curr_month, curr_year, payments=fees_map.get(s['id'], []))
-        summary_data.append({
-            'Student ID': s['id'],
-            'Student Name': s['name'],
-            'Father Name': s['father_name'] or '',
-            'Phone / WhatsApp': s['phone_number'] or '',
-            'Class / Grade': s['class'],
-            'Monthly Tuition Fee': s['monthly_fee'],
-            'Annual Charges': s['annual_charges'] or 0,
-            'Admission / Opening Arrears': s['opening_arrears'] or 0,
-            'Enrolled Since': f"{s['start_month']}/{s['start_year']}",
-            'Current Month Fee': details['monthly_fee'],
-            'Previous Arrears': details['arrears'],
-            'Total Payable': details['total_payable'],
-            'Paid This Month': details['paid_this_month'],
-            'Remaining Balance': details['remaining_payable']
+    MONTH_KEYS = [
+        ('nov', 2025, 'Nov'),
+        ('dec', 2025, 'Dec'),
+        ('jan', 2026, 'Jan'),
+        ('feb', 2026, 'Feb'),
+        ('ac', None, 'Ac'),
+        ('sp', None, 'Sp'),
+        ('books', None, 'Books'),
+        ('mar', 2026, 'Mar'),
+        ('apr', 2026, 'April'),
+        ('may', 2026, 'May'),
+        ('jun', 2026, 'June'),
+        ('jul', 2026, 'July'),
+        ('aug', 2026, 'Aug'),
+        ('sep', 2026, 'Sep'),
+        ('oct', 2026, 'Oct')
+    ]
+
+    MONTH_NAME_TO_PREFIX = {
+        'january': 'jan', 'february': 'feb', 'march': 'mar', 'april': 'apr',
+        'may': 'may', 'june': 'jun', 'july': 'jul', 'august': 'aug',
+        'september': 'sep', 'october': 'oct', 'november': 'nov', 'december': 'dec',
+        'jan': 'jan', 'feb': 'feb', 'fe': 'feb', 'mar': 'mar', 'apr': 'apr',
+        'may': 'may', 'jun': 'jun', 'jul': 'jul', 'aug': 'aug',
+        'sep': 'sep', 'sept': 'sep', 'oct': 'oct', 'nov': 'nov', 'dec': 'dec', 'dece': 'dec'
+    }
+
+    CLASS_ORDER = [
+        'PG', 'Play Group', 'Nursery', 'Prep',
+        'One', 'Two', 'Three', 'Four', 'Five',
+        'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Graduate'
+    ]
+
+    # Group students by normalized class
+    classes_map = {}
+    for s in (students or []):
+        raw_c = (s['class'] or 'General').strip() if 'class' in s.keys() else 'General'
+        c_upper = raw_c.upper()
+        if c_upper in ('PG', 'PLAY GROUP', 'PLAYGROUP', 'PLAY-GROUP'):
+            c_key = 'PG'
+        elif c_upper == 'NURSERY':
+            c_key = 'Nursery'
+        elif c_upper == 'PREP':
+            c_key = 'Prep'
+        elif c_upper == 'ONE':
+            c_key = 'One'
+        elif c_upper == 'TWO':
+            c_key = 'Two'
+        elif c_upper == 'THREE':
+            c_key = 'Three'
+        elif c_upper == 'FOUR':
+            c_key = 'Four'
+        elif c_upper == 'FIVE':
+            c_key = 'Five'
+        elif c_upper == 'SIX':
+            c_key = 'Six'
+        elif c_upper == 'SEVEN':
+            c_key = 'Seven'
+        elif c_upper == 'EIGHT':
+            c_key = 'Eight'
+        elif c_upper == 'NINE':
+            c_key = 'Nine'
+        elif c_upper == 'TEN':
+            c_key = 'Ten'
+        elif c_upper == 'GRADUATE':
+            c_key = 'Graduate'
+        else:
+            c_key = raw_c.capitalize()
+
+        if c_key not in classes_map:
+            classes_map[c_key] = []
+        classes_map[c_key].append(s)
+
+    sorted_classes = sorted(
+        classes_map.keys(),
+        key=lambda x: CLASS_ORDER.index(x) if x in CLASS_ORDER else 999
+    )
+
+    wb = openpyxl.Workbook()
+    default_sheet = wb.active
+
+    # Style definitions
+    title_font = Font(name="Times New Roman", size=18, bold=True, color="1E293B")
+    class_font = Font(name="Times New Roman", size=14, bold=True, color="334155")
+    header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
+
+    red_fill = PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid")
+    red_font = Font(name="Calibri", size=11, color="991B1B")
+
+    green_fill = PatternFill(start_color="DCFCE7", end_color="DCFCE7", fill_type="solid")
+    green_font = Font(name="Calibri", size=11, color="166534")
+
+    regular_font = Font(name="Calibri", size=11)
+    bold_font = Font(name="Calibri", size=11, bold=True)
+
+    thin_border = Border(
+        left=Side(style='thin', color='CBD5E1'),
+        right=Side(style='thin', color='CBD5E1'),
+        top=Side(style='thin', color='CBD5E1'),
+        bottom=Side(style='thin', color='CBD5E1')
+    )
+
+    align_center = Alignment(horizontal="center", vertical="center")
+    align_left = Alignment(horizontal="left", vertical="center")
+
+    summary_rows = []
+
+    for c_name in sorted_classes:
+        ws = wb.create_sheet(title=c_name[:31])
+        ws.row_dimensions[1].height = 28
+        ws.row_dimensions[2].height = 22
+        ws.row_dimensions[3].height = 24
+
+        headers = ['Sr. No.', 'Name', 'Father Name', 'Monthly Fee']
+        for _, _, label in MONTH_KEYS:
+            headers.append(label)
+        headers.extend(['Total Paid', 'Remaining Balance'])
+
+        # Row 1: Campus Title
+        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(headers))
+        c1 = ws.cell(1, 1, title_name)
+        c1.font = title_font
+        c1.alignment = align_center
+
+        # Row 2: Class Name
+        ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=len(headers))
+        c2 = ws.cell(2, 1, f"Class: {c_name}")
+        c2.font = class_font
+        c2.alignment = align_center
+
+        # Row 3: Column Headers
+        for col_idx, h_text in enumerate(headers, 1):
+            cell = ws.cell(3, col_idx, h_text)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = align_center
+            cell.border = thin_border
+
+        st_list = classes_map[c_name]
+        class_active_cnt = 0
+        class_withdrawn_cnt = 0
+        class_mfee_sum = 0
+        class_paid_sum = 0
+        class_bal_sum = 0
+
+        for sr, s in enumerate(st_list, 1):
+            row_idx = sr + 3
+            ws.row_dimensions[row_idx].height = 19
+
+            sid = s['id'] if 'id' in s.keys() else sr
+            st_status = (s.get('status') or 'active').lower() if hasattr(s, 'get') else 'active'
+            m_fee = float(s['monthly_fee'] or 0.0) if 'monthly_fee' in s.keys() else 0.0
+            ann_charges = float(s['annual_charges'] or 0.0) if 'annual_charges' in s.keys() else 0.0
+
+            if st_status == 'withdrawn':
+                class_withdrawn_cnt += 1
+            else:
+                class_active_cnt += 1
+                class_mfee_sum += m_fee
+
+            row_fill = None
+            row_font = regular_font
+            if st_status == 'withdrawn':
+                row_fill = red_fill
+                row_font = red_font
+            elif m_fee == 0:
+                row_fill = green_fill
+                row_font = green_font
+
+            # Map payments
+            s_fees = fees_by_student.get(sid, [])
+            fee_by_month_year = {}
+            book_paid = 0.0
+            for f in s_fees:
+                try:
+                    fm = str(f['month'] or '').strip().lower()
+                    fy = f.get('year') if hasattr(f, 'get') else f['year']
+                    p_amt = float(f['paid_amount'] or 0.0)
+                    if 'book' in fm or 'stationary' in fm:
+                        book_paid += p_amt
+                        continue
+                    m_pref = MONTH_NAME_TO_PREFIX.get(fm, fm[:3])
+                    key = (m_pref, fy)
+                    fee_by_month_year[key] = fee_by_month_year.get(key, 0.0) + p_amt
+                except Exception:
+                    pass
+
+            s_ac = ac_by_student.get(sid, {'ac': 0.0, 'sp': 0.0})
+
+            # Base columns
+            c_sr = ws.cell(row_idx, 1, sr)
+            c_sr.alignment = align_center
+
+            c_name = ws.cell(row_idx, 2, s['name'] if 'name' in s.keys() else '')
+            c_name.alignment = align_left
+
+            c_father = ws.cell(row_idx, 3, (s['father_name'] or '') if 'father_name' in s.keys() else '')
+            c_father.alignment = align_left
+
+            c_fee = ws.cell(row_idx, 4, int(m_fee) if m_fee == int(m_fee) else m_fee)
+            c_fee.alignment = align_center
+
+            # Month / Charge columns
+            col_pos = 5
+            row_paid_sum = 0.0
+            for m_key, yr, _ in MONTH_KEYS:
+                val = None
+                if m_key == 'ac':
+                    val = s_ac['ac'] if s_ac['ac'] > 0 else None
+                elif m_key == 'sp':
+                    val = s_ac['sp'] if s_ac['sp'] > 0 else None
+                elif m_key == 'books':
+                    val = book_paid if book_paid > 0 else None
+                else:
+                    amt = fee_by_month_year.get((m_key, yr), 0.0)
+                    if amt == 0.0:
+                        amt = fee_by_month_year.get((m_key, None), 0.0)
+                    if amt > 0:
+                        val = amt
+
+                if val is not None:
+                    row_paid_sum += val
+                    cell_val = int(val) if val == int(val) else round(val, 1)
+                else:
+                    cell_val = ""
+
+                c_m = ws.cell(row_idx, col_pos, cell_val)
+                c_m.alignment = align_center
+                col_pos += 1
+
+            # Total Paid
+            c_tpaid = ws.cell(row_idx, col_pos, int(row_paid_sum) if row_paid_sum == int(row_paid_sum) else round(row_paid_sum, 1))
+            c_tpaid.alignment = align_center
+            c_tpaid.font = bold_font
+            class_paid_sum += row_paid_sum
+
+            # Remaining Balance
+            details = get_student_fee_details(s, curr_month, curr_year, payments=s_fees)
+            paid_ac = s_ac['ac']
+            unpaid_ac = max(0.0, ann_charges - paid_ac)
+            rem_balance = details['remaining_payable'] + unpaid_ac
+            class_bal_sum += rem_balance
+
+            if rem_balance > 0:
+                bal_val = int(rem_balance) if rem_balance == int(rem_balance) else round(rem_balance, 1)
+            else:
+                bal_val = 0
+
+            c_bal = ws.cell(row_idx, col_pos + 1, bal_val)
+            c_bal.alignment = align_center
+            c_bal.font = bold_font
+
+            # Apply cell styles
+            for col_i in range(1, len(headers) + 1):
+                cell = ws.cell(row_idx, col_i)
+                cell.border = thin_border
+                if row_fill:
+                    cell.fill = row_fill
+                if cell.font != bold_font:
+                    cell.font = row_font
+
+        # Column widths
+        ws.column_dimensions['A'].width = 8
+        ws.column_dimensions['B'].width = 28
+        ws.column_dimensions['C'].width = 28
+        ws.column_dimensions['D'].width = 14
+        for col_i in range(5, 5 + len(MONTH_KEYS)):
+            ws.column_dimensions[get_column_letter(col_i)].width = 11
+        ws.column_dimensions[get_column_letter(5 + len(MONTH_KEYS))].width = 14
+        ws.column_dimensions[get_column_letter(6 + len(MONTH_KEYS))].width = 18
+
+        summary_rows.append({
+            'class': c_name,
+            'total': len(st_list),
+            'active': class_active_cnt,
+            'withdrawn': class_withdrawn_cnt,
+            'mfee': class_mfee_sum,
+            'paid': class_paid_sum,
+            'balance': class_bal_sum
         })
 
-    df_summary = pd.DataFrame(summary_data) if summary_data else pd.DataFrame(columns=[
-        'Student ID', 'Student Name', 'Father Name', 'Phone / WhatsApp', 'Class / Grade', 
-        'Monthly Tuition Fee', 'Annual Charges', 'Admission / Opening Arrears', 'Enrolled Since', 
-        'Current Month Fee', 'Previous Arrears', 'Total Payable', 'Paid This Month', 'Remaining Balance'
-    ])
+    # Add Campus Summary sheet at the end
+    if summary_rows:
+        ws_sum = wb.create_sheet(title='Campus Summary')
+        ws_sum.row_dimensions[1].height = 28
+        ws_sum.row_dimensions[2].height = 22
+        ws_sum.row_dimensions[3].height = 24
 
-    df_students = pd.DataFrame([dict(s) for s in students]) if students else pd.DataFrame(columns=[
-        'id', 'name', 'father_name', 'phone_number', 'class', 'monthly_fee', 'annual_charges', 
-        'opening_arrears', 'start_month', 'start_year'
-    ])
-    if not df_students.empty:
-        cols = ['id', 'name', 'father_name', 'phone_number', 'class', 'monthly_fee', 'annual_charges', 'opening_arrears', 'start_month', 'start_year']
-        cols = [c for c in cols if c in df_students.columns]
-        df_students = df_students[cols]
-        df_students.rename(columns={
-            'id': 'Student ID',
-            'name': 'Student Name',
-            'father_name': 'Father Name',
-            'phone_number': 'Phone / WhatsApp',
-            'class': 'Class / Grade',
-            'monthly_fee': 'Monthly Tuition Fee (Rs.)',
-            'annual_charges': 'Annual Charges (Rs.)',
-            'opening_arrears': 'Opening Arrears (Rs.)',
-            'start_month': 'Billing Start Month',
-            'start_year': 'Billing Start Year'
-        }, inplace=True)
+        s_headers = ['Sr. No.', 'Class Name', 'Total Students', 'Active', 'Withdrawn', 'Monthly Fee Expected (Rs.)', 'Total Paid (Rs.)', 'Remaining Balance (Rs.)']
+        ws_sum.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(s_headers))
+        ws_sum.cell(1, 1, title_name).font = title_font
+        ws_sum.cell(1, 1).alignment = align_center
 
-    df_fees = pd.DataFrame([dict(f) for f in fees]) if fees else pd.DataFrame(columns=[
-        'id', 'student_name', 'father_name', 'class', 'month', 'year', 'paid_amount', 
-        'date_paid', 'payment_mode', 'reference_no', 'collected_by', 'notes'
-    ])
-    if not df_fees.empty:
-        cols = ['id', 'student_name', 'father_name', 'class', 'month', 'year', 'paid_amount', 'date_paid', 'payment_mode', 'reference_no', 'collected_by', 'notes']
-        cols = [c for c in cols if c in df_fees.columns]
-        df_fees = df_fees[cols]
-        df_fees.rename(columns={
-            'id': 'Receipt #',
-            'student_name': 'Student Name',
-            'father_name': 'Father Name',
-            'class': 'Class',
-            'month': 'Fee Month',
-            'year': 'Fee Year',
-            'paid_amount': 'Paid Amount (Rs.)',
-            'date_paid': 'Payment Date',
-            'payment_mode': 'Payment Mode',
-            'reference_no': 'Ref / Slip #',
-            'collected_by': 'Collected By',
-            'notes': 'Remarks / Notes'
-        }, inplace=True)
+        ws_sum.merge_cells(start_row=2, start_column=1, end_row=2, end_column=len(s_headers))
+        ws_sum.cell(2, 1, "Campus Fee & Enrollment Summary").font = class_font
+        ws_sum.cell(2, 1).alignment = align_center
 
-    df_annual = pd.DataFrame([dict(a) for a in annual_charges]) if annual_charges else pd.DataFrame(columns=[
-        'id', 'student_name', 'father_name', 'class', 'year', 'paid_amount', 
-        'date_paid', 'payment_mode', 'reference_no', 'collected_by', 'notes'
-    ])
-    if not df_annual.empty:
-        cols = ['id', 'student_name', 'father_name', 'class', 'year', 'paid_amount', 'date_paid', 'payment_mode', 'reference_no', 'collected_by', 'notes']
-        cols = [c for c in cols if c in df_annual.columns]
-        df_annual = df_annual[cols]
-        df_annual.rename(columns={
-            'id': 'Receipt #',
-            'student_name': 'Student Name',
-            'father_name': 'Father Name',
-            'class': 'Class',
-            'year': 'Year',
-            'paid_amount': 'Paid Amount (Rs.)',
-            'date_paid': 'Payment Date',
-            'payment_mode': 'Payment Mode',
-            'reference_no': 'Ref / Slip #',
-            'collected_by': 'Collected By',
-            'notes': 'Remarks / Notes'
-        }, inplace=True)
+        for col_idx, h_text in enumerate(s_headers, 1):
+            cell = ws_sum.cell(3, col_idx, h_text)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = align_center
+            cell.border = thin_border
+
+        for sr, sr_data in enumerate(summary_rows, 1):
+            r_idx = sr + 3
+            ws_sum.row_dimensions[r_idx].height = 20
+            row_vals = [
+                sr,
+                sr_data['class'],
+                sr_data['total'],
+                sr_data['active'],
+                sr_data['withdrawn'],
+                int(sr_data['mfee']) if sr_data['mfee'] == int(sr_data['mfee']) else round(sr_data['mfee'], 1),
+                int(sr_data['paid']) if sr_data['paid'] == int(sr_data['paid']) else round(sr_data['paid'], 1),
+                int(sr_data['balance']) if sr_data['balance'] == int(sr_data['balance']) else round(sr_data['balance'], 1)
+            ]
+            for col_i, val in enumerate(row_vals, 1):
+                cell = ws_sum.cell(r_idx, col_i, val)
+                cell.font = regular_font
+                cell.border = thin_border
+                cell.alignment = align_left if col_i == 2 else align_center
+
+        # Total Row
+        tot_r = len(summary_rows) + 4
+        ws_sum.row_dimensions[tot_r].height = 22
+        tot_vals = [
+            "TOTAL",
+            "",
+            sum(r['total'] for r in summary_rows),
+            sum(r['active'] for r in summary_rows),
+            sum(r['withdrawn'] for r in summary_rows),
+            int(sum(r['mfee'] for r in summary_rows)),
+            int(sum(r['paid'] for r in summary_rows)),
+            int(sum(r['balance'] for r in summary_rows))
+        ]
+        total_fill = PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")
+        for col_i, val in enumerate(tot_vals, 1):
+            cell = ws_sum.cell(tot_r, col_i, val)
+            cell.font = bold_font
+            cell.fill = total_fill
+            cell.border = thin_border
+            cell.alignment = align_left if col_i == 2 else align_center
+
+        ws_sum.column_dimensions['A'].width = 8
+        ws_sum.column_dimensions['B'].width = 20
+        ws_sum.column_dimensions['C'].width = 16
+        ws_sum.column_dimensions['D'].width = 12
+        ws_sum.column_dimensions['E'].width = 14
+        ws_sum.column_dimensions['F'].width = 24
+        ws_sum.column_dimensions['G'].width = 18
+        ws_sum.column_dimensions['H'].width = 24
+
+    # Remove the initial default empty sheet if classes exist
+    if default_sheet in wb.worksheets and len(wb.worksheets) > 1:
+        wb.remove(default_sheet)
 
     output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df_summary.to_excel(writer, sheet_name='Fee Balances & Dues', index=False)
-        df_students.to_excel(writer, sheet_name='Students Directory', index=False)
-        df_fees.to_excel(writer, sheet_name='Recent Fee Receipts', index=False)
-        df_annual.to_excel(writer, sheet_name='Annual Charges Receipts', index=False)
-
-        from openpyxl.styles import Font, PatternFill, Alignment
-        from openpyxl.utils import get_column_letter
-        
-        header_fill = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
-        header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
-        
-        sheet_dfs = [
-            ('Fee Balances & Dues', df_summary),
-            ('Students Directory', df_students),
-            ('Recent Fee Receipts', df_fees),
-            ('Annual Charges Receipts', df_annual)
-        ]
-        for sheet_name, s_df in sheet_dfs:
-            if sheet_name in writer.sheets:
-                ws = writer.sheets[sheet_name]
-                if ws.max_row >= 1:
-                    for cell in ws[1]:
-                        cell.fill = header_fill
-                        cell.font = header_font
-                        cell.alignment = Alignment(horizontal="center", vertical="center")
-                    
-                for col_idx, col_name in enumerate(s_df.columns, 1):
-                    col_letter = get_column_letter(col_idx)
-                    # Sample first 100 rows for lightning-fast width calculation without iterating 100k+ cells
-                    sample = s_df[col_name].dropna().astype(str).head(100)
-                    max_val_len = sample.map(len).max() if not sample.empty else 0
-                    max_len = max(len(str(col_name)), int(max_val_len or 0))
-                    ws.column_dimensions[col_letter].width = min(max(max_len + 4, 14), 45)
-
+    wb.save(output)
     output.seek(0)
     return output
 
@@ -755,55 +986,29 @@ def export_campus_excel(campus_id):
 
         students = conn.execute('''
             SELECT id, name, father_name, phone_number, class, monthly_fee, annual_charges, 
-                   opening_arrears, start_month, start_year, campus_id 
+                   opening_arrears, start_month, start_year, campus_id, status 
             FROM students 
             WHERE campus_id = ? 
             ORDER BY class, name
         ''', (campus_id,)).fetchall()
 
-        # All fees for accurate 100% lifetime balance calculation (lightweight 5 columns)
-        calc_fees = conn.execute('''
+        all_fees = conn.execute('''
             SELECT student_id, month, year, paid_amount, notes 
             FROM fees 
             WHERE campus_id = ?
         ''', (campus_id,)).fetchall()
 
-        # Recent receipts for the Receipts sheet (latest 2,000 for fast generation)
-        fees = conn.execute('''
-            SELECT f.id, f.student_id, s.name as student_name, s.father_name, s.class, 
-                   f.month, f.year, f.paid_amount, f.date_paid, f.payment_mode, f.reference_no, 
-                   f.collected_by, f.notes
-            FROM fees f
-            JOIN students s ON f.student_id = s.id
-            WHERE f.campus_id = ?
-            ORDER BY f.id DESC
-            LIMIT 2000
-        ''', (campus_id,)).fetchall()
-
-        annual_charges = conn.execute('''
-            SELECT a.id, a.student_id, s.name as student_name, s.father_name, s.class, 
-                   a.year, a.paid_amount, a.date_paid, a.payment_mode, a.reference_no, 
-                   a.collected_by, a.notes
-            FROM annual_charges_payments a
-            JOIN students s ON a.student_id = s.id
-            WHERE a.campus_id = ?
-            ORDER BY a.id DESC
-            LIMIT 2000
+        all_ac = conn.execute('''
+            SELECT student_id, year, paid_amount, notes 
+            FROM annual_charges_payments 
+            WHERE campus_id = ?
         ''', (campus_id,)).fetchall()
 
         conn.close()
 
-        # Build fee map from all calc_fees
-        fees_map = {}
-        for cf in calc_fees:
-            sid = cf['student_id']
-            if sid not in fees_map:
-                fees_map[sid] = []
-            fees_map[sid].append(cf)
-
-        output = generate_excel_workbook(students, fees, annual_charges, title_name=campus_name, fees_map=fees_map)
+        output = generate_excel_workbook(students, all_fees, all_ac, title_name=campus_name)
         safe_code = re.sub(r'[^a-zA-Z0-9_-]', '_', str(campus_code))
-        filename = f"{safe_code}_Report_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+        filename = f"{safe_code}_Fee_Record_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
         return send_file(output, as_attachment=True, download_name=filename, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     except Exception as e:
         import traceback
@@ -887,7 +1092,6 @@ def export_students_excel():
         query += " ORDER BY s.class, s.name"
         students = conn.execute(query, params).fetchall()
 
-        fees_map = {}
         if students:
             campuses = list({s['campus_id'] for s in students if s['campus_id']})
             if len(campuses) == 1:
@@ -897,26 +1101,10 @@ def export_students_excel():
                     WHERE campus_id = ?
                 ''', (campuses[0],)).fetchall()
 
-                fees = conn.execute('''
-                    SELECT f.id, f.student_id, s.name as student_name, s.father_name, s.class, 
-                           f.month, f.year, f.paid_amount, f.date_paid, f.payment_mode, f.reference_no, 
-                           f.collected_by, f.notes
-                    FROM fees f
-                    JOIN students s ON f.student_id = s.id
-                    WHERE f.campus_id = ?
-                    ORDER BY f.id DESC
-                    LIMIT 2000
-                ''', (campuses[0],)).fetchall()
-
                 annual_charges = conn.execute('''
-                    SELECT a.id, a.student_id, s.name as student_name, s.father_name, s.class, 
-                           a.year, a.paid_amount, a.date_paid, a.payment_mode, a.reference_no, 
-                           a.collected_by, a.notes
-                    FROM annual_charges_payments a
-                    JOIN students s ON a.student_id = s.id
-                    WHERE a.campus_id = ?
-                    ORDER BY a.id DESC
-                    LIMIT 2000
+                    SELECT student_id, year, paid_amount, notes 
+                    FROM annual_charges_payments 
+                    WHERE campus_id = ?
                 ''', (campuses[0],)).fetchall()
             else:
                 calc_fees = conn.execute('''
@@ -924,39 +1112,18 @@ def export_students_excel():
                     FROM fees
                 ''').fetchall()
 
-                fees = conn.execute('''
-                    SELECT f.id, f.student_id, s.name as student_name, s.father_name, s.class, 
-                           f.month, f.year, f.paid_amount, f.date_paid, f.payment_mode, f.reference_no, 
-                           f.collected_by, f.notes
-                    FROM fees f
-                    JOIN students s ON f.student_id = s.id
-                    ORDER BY f.id DESC
-                    LIMIT 2000
-                ''').fetchall()
-
                 annual_charges = conn.execute('''
-                    SELECT a.id, a.student_id, s.name as student_name, s.father_name, s.class, 
-                           a.year, a.paid_amount, a.date_paid, a.payment_mode, a.reference_no, 
-                           a.collected_by, a.notes
-                    FROM annual_charges_payments a
-                    JOIN students s ON a.student_id = s.id
-                    ORDER BY a.id DESC
-                    LIMIT 2000
+                    SELECT student_id, year, paid_amount, notes 
+                    FROM annual_charges_payments
                 ''').fetchall()
-
-            for cf in calc_fees:
-                sid = cf['student_id']
-                if sid not in fees_map:
-                    fees_map[sid] = []
-                fees_map[sid].append(cf)
         else:
-            fees = []
+            calc_fees = []
             annual_charges = []
 
         conn.close()
 
-        output = generate_excel_workbook(students, fees, annual_charges, title_name="Students", fees_map=fees_map)
-        filename = f"Students_Export_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+        output = generate_excel_workbook(students, calc_fees, annual_charges, title_name="Students Fee Record")
+        filename = f"Students_Fee_Record_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
         return send_file(output, as_attachment=True, download_name=filename, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     except Exception as e:
         import traceback
