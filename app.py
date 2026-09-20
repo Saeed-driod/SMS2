@@ -454,7 +454,7 @@ def repair_existing_lump_sum_fees(conn):
 
 @app.route('/health')
 def health():
-    return jsonify({"status": "ok", "version": "v2.4-class-register-format", "time": str(datetime.now())})
+    return jsonify({"status": "ok", "version": "v2.5-class-register-fixed", "time": str(datetime.now())})
 
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -796,8 +796,8 @@ def generate_excel_workbook(students, fees, annual_charges, title_name="Report",
             c_sr = ws.cell(row_idx, 1, sr)
             c_sr.alignment = align_center
 
-            c_name = ws.cell(row_idx, 2, s['name'] if 'name' in s.keys() else '')
-            c_name.alignment = align_left
+            c_sname = ws.cell(row_idx, 2, s['name'] if 'name' in s.keys() else '')
+            c_sname.alignment = align_left
 
             c_father = ws.cell(row_idx, 3, (s['father_name'] or '') if 'father_name' in s.keys() else '')
             c_father.alignment = align_left
