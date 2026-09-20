@@ -452,6 +452,11 @@ def repair_existing_lump_sum_fees(conn):
     except Exception as e:
         print("Lump sum fees auto-repair note:", e)
 
+@app.route('/health')
+def health():
+    return jsonify({"status": "ok", "version": "v2.2-fast-export", "time": str(datetime.now())})
+
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if 'logged_in' in session:
@@ -732,54 +737,60 @@ def generate_excel_workbook(students, fees, annual_charges, title_name="Report")
 @app.route('/campuses/export/<int:campus_id>')
 @login_required
 def export_campus_excel(campus_id):
-    if session.get('role') != 'admin' and session.get('campus_id') != campus_id:
-        flash('Access Denied. You cannot export data from another campus.', 'danger')
-        return redirect(url_for('dashboard'))
+    try:
+        if session.get('role') != 'admin' and session.get('campus_id') != campus_id:
+            flash('Access Denied. You cannot export data from another campus.', 'danger')
+            return redirect(url_for('dashboard'))
 
-    conn = get_db_connection()
-    campus = conn.execute("SELECT * FROM campuses WHERE id = ?", (campus_id,)).fetchone()
-    if not campus:
+        conn = get_db_connection()
+        campus = conn.execute("SELECT * FROM campuses WHERE id = ?", (campus_id,)).fetchone()
+        if not campus:
+            conn.close()
+            flash('Campus not found.', 'danger')
+            return redirect(url_for('campuses_view'))
+
+        campus_name = campus['name'] or 'Campus'
+        campus_code = campus['code'] or f"campus_{campus_id}"
+
+        students = conn.execute('''
+            SELECT id, name, father_name, phone_number, class, monthly_fee, annual_charges, 
+                   opening_arrears, start_month, start_year, campus_id 
+            FROM students 
+            WHERE campus_id = ? 
+            ORDER BY class, name
+        ''', (campus_id,)).fetchall()
+
+        fees = conn.execute('''
+            SELECT f.id, f.student_id, s.name as student_name, s.father_name, s.class, 
+                   f.month, f.year, f.paid_amount, f.date_paid, f.payment_mode, f.reference_no, 
+                   f.collected_by, f.notes
+            FROM fees f
+            JOIN students s ON f.student_id = s.id
+            WHERE f.campus_id = ?
+            ORDER BY f.date_paid DESC, f.id DESC
+        ''', (campus_id,)).fetchall()
+
+        annual_charges = conn.execute('''
+            SELECT a.id, a.student_id, s.name as student_name, s.father_name, s.class, 
+                   a.year, a.paid_amount, a.date_paid, a.payment_mode, a.reference_no, 
+                   a.collected_by, a.notes
+            FROM annual_charges_payments a
+            JOIN students s ON a.student_id = s.id
+            WHERE a.campus_id = ?
+            ORDER BY a.date_paid DESC, a.id DESC
+        ''', (campus_id,)).fetchall()
+
         conn.close()
-        flash('Campus not found.', 'danger')
-        return redirect(url_for('campuses_view'))
 
-    campus_name = campus['name'] or 'Campus'
-    campus_code = campus['code'] or f"campus_{campus_id}"
-
-    students = conn.execute('''
-        SELECT id, name, father_name, phone_number, class, monthly_fee, annual_charges, 
-               opening_arrears, start_month, start_year, campus_id 
-        FROM students 
-        WHERE campus_id = ? 
-        ORDER BY class, name
-    ''', (campus_id,)).fetchall()
-
-    fees = conn.execute('''
-        SELECT f.id, f.student_id, s.name as student_name, s.father_name, s.class, 
-               f.month, f.year, f.paid_amount, f.date_paid, f.payment_mode, f.reference_no, 
-               f.collected_by, f.notes
-        FROM fees f
-        JOIN students s ON f.student_id = s.id
-        WHERE f.campus_id = ?
-        ORDER BY f.date_paid DESC, f.id DESC
-    ''', (campus_id,)).fetchall()
-
-    annual_charges = conn.execute('''
-        SELECT a.id, a.student_id, s.name as student_name, s.father_name, s.class, 
-               a.year, a.paid_amount, a.date_paid, a.payment_mode, a.reference_no, 
-               a.collected_by, a.notes
-        FROM annual_charges_payments a
-        JOIN students s ON a.student_id = s.id
-        WHERE a.campus_id = ?
-        ORDER BY a.date_paid DESC, a.id DESC
-    ''', (campus_id,)).fetchall()
-
-    conn.close()
-
-    output = generate_excel_workbook(students, fees, annual_charges, title_name=campus_name)
-    safe_code = re.sub(r'[^a-zA-Z0-9_-]', '_', str(campus_code))
-    filename = f"{safe_code}_Report_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
-    return send_file(output, as_attachment=True, download_name=filename, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        output = generate_excel_workbook(students, fees, annual_charges, title_name=campus_name)
+        safe_code = re.sub(r'[^a-zA-Z0-9_-]', '_', str(campus_code))
+        filename = f"{safe_code}_Report_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+        return send_file(output, as_attachment=True, download_name=filename, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    except Exception as e:
+        import traceback
+        err_msg = traceback.format_exc()
+        print(f"Error in export_campus_excel: {err_msg}")
+        return f"<div style='font-family:sans-serif;padding:25px;'><h2 style='color:#dc2626;'>Export Failed</h2><pre style='background:#f1f5f9;padding:15px;border-radius:6px;overflow:auto;border:1px solid #cbd5e1;'>{err_msg}</pre></div>", 500
 
 
 def build_student_query_filters(search='', class_filter='', campus_filter=None, status_filter='', active_campus_id=None):
