@@ -454,7 +454,7 @@ def repair_existing_lump_sum_fees(conn):
 
 @app.route('/health')
 def health():
-    return jsonify({"status": "ok", "version": "v2.2-fast-export", "time": str(datetime.now())})
+    return jsonify({"status": "ok", "version": "v2.3-optimized-export", "time": str(datetime.now())})
 
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -562,21 +562,22 @@ def clear_campus_data(campus_id):
     return redirect(url_for('campuses_view'))
 
 
-def generate_excel_workbook(students, fees, annual_charges, title_name="Report"):
+def generate_excel_workbook(students, fees, annual_charges, title_name="Report", fees_map=None):
     curr_month = MONTH_NUM_TO_NAME[datetime.now().month]
     curr_year = datetime.now().year
     
-    # Pre-map fees by student_id to eliminate N+1 database connection overhead
-    fees_map = {}
-    if fees:
-        for f in fees:
-            try:
-                sid = f['student_id']
-                if sid not in fees_map:
-                    fees_map[sid] = []
-                fees_map[sid].append(f)
-            except (KeyError, IndexError):
-                pass
+    # Pre-map fees by student_id if not provided
+    if fees_map is None:
+        fees_map = {}
+        if fees:
+            for f in fees:
+                try:
+                    sid = f['student_id']
+                    if sid not in fees_map:
+                        fees_map[sid] = []
+                    fees_map[sid].append(f)
+                except (KeyError, IndexError):
+                    pass
 
     # If fees were provided without student_id or not matching, batch fetch in one single query
     if students and not fees_map:
@@ -698,7 +699,7 @@ def generate_excel_workbook(students, fees, annual_charges, title_name="Report")
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df_summary.to_excel(writer, sheet_name='Fee Balances & Dues', index=False)
         df_students.to_excel(writer, sheet_name='Students Directory', index=False)
-        df_fees.to_excel(writer, sheet_name='Monthly Fee Receipts', index=False)
+        df_fees.to_excel(writer, sheet_name='Recent Fee Receipts', index=False)
         df_annual.to_excel(writer, sheet_name='Annual Charges Receipts', index=False)
 
         from openpyxl.styles import Font, PatternFill, Alignment
@@ -710,7 +711,7 @@ def generate_excel_workbook(students, fees, annual_charges, title_name="Report")
         sheet_dfs = [
             ('Fee Balances & Dues', df_summary),
             ('Students Directory', df_students),
-            ('Monthly Fee Receipts', df_fees),
+            ('Recent Fee Receipts', df_fees),
             ('Annual Charges Receipts', df_annual)
         ]
         for sheet_name, s_df in sheet_dfs:
@@ -760,6 +761,14 @@ def export_campus_excel(campus_id):
             ORDER BY class, name
         ''', (campus_id,)).fetchall()
 
+        # All fees for accurate 100% lifetime balance calculation (lightweight 5 columns)
+        calc_fees = conn.execute('''
+            SELECT student_id, month, year, paid_amount, notes 
+            FROM fees 
+            WHERE campus_id = ?
+        ''', (campus_id,)).fetchall()
+
+        # Recent receipts for the Receipts sheet (latest 2,000 for fast generation)
         fees = conn.execute('''
             SELECT f.id, f.student_id, s.name as student_name, s.father_name, s.class, 
                    f.month, f.year, f.paid_amount, f.date_paid, f.payment_mode, f.reference_no, 
@@ -767,7 +776,8 @@ def export_campus_excel(campus_id):
             FROM fees f
             JOIN students s ON f.student_id = s.id
             WHERE f.campus_id = ?
-            ORDER BY f.date_paid DESC, f.id DESC
+            ORDER BY f.id DESC
+            LIMIT 2000
         ''', (campus_id,)).fetchall()
 
         annual_charges = conn.execute('''
@@ -777,12 +787,21 @@ def export_campus_excel(campus_id):
             FROM annual_charges_payments a
             JOIN students s ON a.student_id = s.id
             WHERE a.campus_id = ?
-            ORDER BY a.date_paid DESC, a.id DESC
+            ORDER BY a.id DESC
+            LIMIT 2000
         ''', (campus_id,)).fetchall()
 
         conn.close()
 
-        output = generate_excel_workbook(students, fees, annual_charges, title_name=campus_name)
+        # Build fee map from all calc_fees
+        fees_map = {}
+        for cf in calc_fees:
+            sid = cf['student_id']
+            if sid not in fees_map:
+                fees_map[sid] = []
+            fees_map[sid].append(cf)
+
+        output = generate_excel_workbook(students, fees, annual_charges, title_name=campus_name, fees_map=fees_map)
         safe_code = re.sub(r'[^a-zA-Z0-9_-]', '_', str(campus_code))
         filename = f"{safe_code}_Report_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
         return send_file(output, as_attachment=True, download_name=filename, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
@@ -843,62 +862,108 @@ def build_student_query_filters(search='', class_filter='', campus_filter=None, 
 @app.route('/students/export')
 @login_required
 def export_students_excel():
-    active_campus_id = get_active_campus_id()
-    search = request.args.get('search', '').strip()
-    class_filter = request.args.get('class_filter', '').strip()
-    campus_filter = request.args.get('campus_filter', type=int)
-    status_filter = request.args.get('status_filter', '').strip()
+    try:
+        active_campus_id = get_active_campus_id()
+        search = request.args.get('search', '').strip()
+        class_filter = request.args.get('class_filter', '').strip()
+        campus_filter = request.args.get('campus_filter', type=int)
+        status_filter = request.args.get('status_filter', '').strip()
 
-    conn = get_db_connection()
-    query = '''
-        SELECT s.*, c.name as campus_name 
-        FROM students s
-        LEFT JOIN campuses c ON s.campus_id = c.id
-        WHERE 1=1
-    '''
-    where_sql, params = build_student_query_filters(
-        search=search,
-        class_filter=class_filter,
-        campus_filter=campus_filter,
-        status_filter=status_filter,
-        active_campus_id=active_campus_id
-    )
-    query += where_sql
-    query += " ORDER BY s.class, s.name"
-    students = conn.execute(query, params).fetchall()
+        conn = get_db_connection()
+        query = '''
+            SELECT s.*, c.name as campus_name 
+            FROM students s
+            LEFT JOIN campuses c ON s.campus_id = c.id
+            WHERE 1=1
+        '''
+        where_sql, params = build_student_query_filters(
+            search=search,
+            class_filter=class_filter,
+            campus_filter=campus_filter,
+            status_filter=status_filter,
+            active_campus_id=active_campus_id
+        )
+        query += where_sql
+        query += " ORDER BY s.class, s.name"
+        students = conn.execute(query, params).fetchall()
 
-    # Fetch corresponding fees and annual charges for these students
-    if students:
-        student_ids = [s['id'] for s in students]
-        placeholders = ','.join('?' * len(student_ids))
-        fees = conn.execute(f'''
-            SELECT f.id, f.student_id, s.name as student_name, s.father_name, s.class, 
-                   f.month, f.year, f.paid_amount, f.date_paid, f.payment_mode, f.reference_no, 
-                   f.collected_by, f.notes
-            FROM fees f
-            JOIN students s ON f.student_id = s.id
-            WHERE f.student_id IN ({placeholders})
-            ORDER BY f.date_paid DESC, f.id DESC
-        ''', student_ids).fetchall()
+        fees_map = {}
+        if students:
+            campuses = list({s['campus_id'] for s in students if s['campus_id']})
+            if len(campuses) == 1:
+                calc_fees = conn.execute('''
+                    SELECT student_id, month, year, paid_amount, notes 
+                    FROM fees 
+                    WHERE campus_id = ?
+                ''', (campuses[0],)).fetchall()
 
-        annual_charges = conn.execute(f'''
-            SELECT a.id, a.student_id, s.name as student_name, s.father_name, s.class, 
-                   a.year, a.paid_amount, a.date_paid, a.payment_mode, a.reference_no, 
-                   a.collected_by, a.notes
-            FROM annual_charges_payments a
-            JOIN students s ON a.student_id = s.id
-            WHERE a.student_id IN ({placeholders})
-            ORDER BY a.date_paid DESC, a.id DESC
-        ''', student_ids).fetchall()
-    else:
-        fees = []
-        annual_charges = []
+                fees = conn.execute('''
+                    SELECT f.id, f.student_id, s.name as student_name, s.father_name, s.class, 
+                           f.month, f.year, f.paid_amount, f.date_paid, f.payment_mode, f.reference_no, 
+                           f.collected_by, f.notes
+                    FROM fees f
+                    JOIN students s ON f.student_id = s.id
+                    WHERE f.campus_id = ?
+                    ORDER BY f.id DESC
+                    LIMIT 2000
+                ''', (campuses[0],)).fetchall()
 
-    conn.close()
+                annual_charges = conn.execute('''
+                    SELECT a.id, a.student_id, s.name as student_name, s.father_name, s.class, 
+                           a.year, a.paid_amount, a.date_paid, a.payment_mode, a.reference_no, 
+                           a.collected_by, a.notes
+                    FROM annual_charges_payments a
+                    JOIN students s ON a.student_id = s.id
+                    WHERE a.campus_id = ?
+                    ORDER BY a.id DESC
+                    LIMIT 2000
+                ''', (campuses[0],)).fetchall()
+            else:
+                calc_fees = conn.execute('''
+                    SELECT student_id, month, year, paid_amount, notes 
+                    FROM fees
+                ''').fetchall()
 
-    output = generate_excel_workbook(students, fees, annual_charges, title_name="Students")
-    filename = f"Students_Export_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
-    return send_file(output, as_attachment=True, download_name=filename, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+                fees = conn.execute('''
+                    SELECT f.id, f.student_id, s.name as student_name, s.father_name, s.class, 
+                           f.month, f.year, f.paid_amount, f.date_paid, f.payment_mode, f.reference_no, 
+                           f.collected_by, f.notes
+                    FROM fees f
+                    JOIN students s ON f.student_id = s.id
+                    ORDER BY f.id DESC
+                    LIMIT 2000
+                ''').fetchall()
+
+                annual_charges = conn.execute('''
+                    SELECT a.id, a.student_id, s.name as student_name, s.father_name, s.class, 
+                           a.year, a.paid_amount, a.date_paid, a.payment_mode, a.reference_no, 
+                           a.collected_by, a.notes
+                    FROM annual_charges_payments a
+                    JOIN students s ON a.student_id = s.id
+                    ORDER BY a.id DESC
+                    LIMIT 2000
+                ''').fetchall()
+
+            for cf in calc_fees:
+                sid = cf['student_id']
+                if sid not in fees_map:
+                    fees_map[sid] = []
+                fees_map[sid].append(cf)
+        else:
+            fees = []
+            annual_charges = []
+
+        conn.close()
+
+        output = generate_excel_workbook(students, fees, annual_charges, title_name="Students", fees_map=fees_map)
+        filename = f"Students_Export_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+        return send_file(output, as_attachment=True, download_name=filename, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    except Exception as e:
+        import traceback
+        err_msg = traceback.format_exc()
+        print(f"Error in export_students_excel: {err_msg}")
+        return f"<div style='font-family:sans-serif;padding:25px;'><h2 style='color:#dc2626;'>Export Failed</h2><pre style='background:#f1f5f9;padding:15px;border-radius:6px;overflow:auto;border:1px solid #cbd5e1;'>{err_msg}</pre></div>", 500
+
 
 
 
