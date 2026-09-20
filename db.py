@@ -542,7 +542,9 @@ def init_db():
                 );
             ''')
             conn.execute("CREATE INDEX IF NOT EXISTS idx_fees_student_id ON fees(student_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_fees_campus_id ON fees(campus_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_ac_student_id ON annual_charges_payments(student_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_ac_campus_id ON annual_charges_payments(campus_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_students_class ON students(class)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_students_campus ON students(campus_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_fees_date_paid ON fees(date_paid)")
@@ -579,7 +581,9 @@ def init_db():
                 );
             ''')
             conn.execute("CREATE INDEX IF NOT EXISTS idx_fees_student_id ON fees(student_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_fees_campus_id ON fees(campus_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_ac_student_id ON annual_charges_payments(student_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_ac_campus_id ON annual_charges_payments(campus_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_students_class ON students(class)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_students_campus ON students(campus_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_fees_date_paid ON fees(date_paid)")

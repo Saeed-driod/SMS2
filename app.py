@@ -561,9 +561,45 @@ def generate_excel_workbook(students, fees, annual_charges, title_name="Report")
     curr_month = MONTH_NUM_TO_NAME[datetime.now().month]
     curr_year = datetime.now().year
     
+    # Pre-map fees by student_id to eliminate N+1 database connection overhead
+    fees_map = {}
+    if fees:
+        for f in fees:
+            try:
+                sid = f['student_id']
+                if sid not in fees_map:
+                    fees_map[sid] = []
+                fees_map[sid].append(f)
+            except (KeyError, IndexError):
+                pass
+
+    # If fees were provided without student_id or not matching, batch fetch in one single query
+    if students and not fees_map:
+        student_ids = [s['id'] for s in students if 'id' in s.keys()]
+        if student_ids:
+            conn = get_db_connection()
+            campus_ids = list({s['campus_id'] for s in students if 'campus_id' in s.keys() and s['campus_id']})
+            if len(campus_ids) == 1:
+                batch_fees = conn.execute(
+                    "SELECT student_id, month, year, paid_amount, notes FROM fees WHERE campus_id = ?",
+                    (campus_ids[0],)
+                ).fetchall()
+            else:
+                placeholders = ','.join(['?'] * len(student_ids))
+                batch_fees = conn.execute(
+                    f"SELECT student_id, month, year, paid_amount, notes FROM fees WHERE student_id IN ({placeholders})",
+                    student_ids
+                ).fetchall()
+            conn.close()
+            for bf in batch_fees:
+                sid = bf['student_id']
+                if sid not in fees_map:
+                    fees_map[sid] = []
+                fees_map[sid].append(bf)
+
     summary_data = []
     for s in students:
-        details = get_student_fee_details(s, curr_month, curr_year)
+        details = get_student_fee_details(s, curr_month, curr_year, payments=fees_map.get(s['id'], []))
         summary_data.append({
             'Student ID': s['id'],
             'Student Name': s['name'],
@@ -666,17 +702,28 @@ def generate_excel_workbook(students, fees, annual_charges, title_name="Report")
         header_fill = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
         header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
         
-        for sheet_name in writer.sheets:
-            ws = writer.sheets[sheet_name]
-            for cell in ws[1]:
-                cell.fill = header_fill
-                cell.font = header_font
-                cell.alignment = Alignment(horizontal="center", vertical="center")
-                
-            for col in ws.columns:
-                max_len = max(len(str(cell.value or '')) for cell in col)
-                col_letter = get_column_letter(col[0].column)
-                ws.column_dimensions[col_letter].width = max(max_len + 4, 14)
+        sheet_dfs = [
+            ('Fee Balances & Dues', df_summary),
+            ('Students Directory', df_students),
+            ('Monthly Fee Receipts', df_fees),
+            ('Annual Charges Receipts', df_annual)
+        ]
+        for sheet_name, s_df in sheet_dfs:
+            if sheet_name in writer.sheets:
+                ws = writer.sheets[sheet_name]
+                if ws.max_row >= 1:
+                    for cell in ws[1]:
+                        cell.fill = header_fill
+                        cell.font = header_font
+                        cell.alignment = Alignment(horizontal="center", vertical="center")
+                    
+                for col_idx, col_name in enumerate(s_df.columns, 1):
+                    col_letter = get_column_letter(col_idx)
+                    # Sample first 100 rows for lightning-fast width calculation without iterating 100k+ cells
+                    sample = s_df[col_name].dropna().astype(str).head(100)
+                    max_val_len = sample.map(len).max() if not sample.empty else 0
+                    max_len = max(len(str(col_name)), int(max_val_len or 0))
+                    ws.column_dimensions[col_letter].width = min(max(max_len + 4, 14), 45)
 
     output.seek(0)
     return output
@@ -696,8 +743,8 @@ def export_campus_excel(campus_id):
         flash('Campus not found.', 'danger')
         return redirect(url_for('campuses_view'))
 
-    campus_name = campus['name']
-    campus_code = campus['code']
+    campus_name = campus['name'] or 'Campus'
+    campus_code = campus['code'] or f"campus_{campus_id}"
 
     students = conn.execute('''
         SELECT id, name, father_name, phone_number, class, monthly_fee, annual_charges, 
@@ -708,29 +755,29 @@ def export_campus_excel(campus_id):
     ''', (campus_id,)).fetchall()
 
     fees = conn.execute('''
-        SELECT f.id, s.name as student_name, s.father_name, s.class, 
+        SELECT f.id, f.student_id, s.name as student_name, s.father_name, s.class, 
                f.month, f.year, f.paid_amount, f.date_paid, f.payment_mode, f.reference_no, 
                f.collected_by, f.notes
         FROM fees f
         JOIN students s ON f.student_id = s.id
-        WHERE f.campus_id = ? OR s.campus_id = ?
+        WHERE f.campus_id = ?
         ORDER BY f.date_paid DESC, f.id DESC
-    ''', (campus_id, campus_id)).fetchall()
+    ''', (campus_id,)).fetchall()
 
     annual_charges = conn.execute('''
-        SELECT a.id, s.name as student_name, s.father_name, s.class, 
+        SELECT a.id, a.student_id, s.name as student_name, s.father_name, s.class, 
                a.year, a.paid_amount, a.date_paid, a.payment_mode, a.reference_no, 
                a.collected_by, a.notes
         FROM annual_charges_payments a
         JOIN students s ON a.student_id = s.id
-        WHERE a.campus_id = ? OR s.campus_id = ?
+        WHERE a.campus_id = ?
         ORDER BY a.date_paid DESC, a.id DESC
-    ''', (campus_id, campus_id)).fetchall()
+    ''', (campus_id,)).fetchall()
 
     conn.close()
 
     output = generate_excel_workbook(students, fees, annual_charges, title_name=campus_name)
-    safe_code = re.sub(r'[^a-zA-Z0-9_-]', '_', campus_code)
+    safe_code = re.sub(r'[^a-zA-Z0-9_-]', '_', str(campus_code))
     filename = f"{safe_code}_Report_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
     return send_file(output, as_attachment=True, download_name=filename, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
@@ -814,7 +861,7 @@ def export_students_excel():
         student_ids = [s['id'] for s in students]
         placeholders = ','.join('?' * len(student_ids))
         fees = conn.execute(f'''
-            SELECT f.id, s.name as student_name, s.father_name, s.class, 
+            SELECT f.id, f.student_id, s.name as student_name, s.father_name, s.class, 
                    f.month, f.year, f.paid_amount, f.date_paid, f.payment_mode, f.reference_no, 
                    f.collected_by, f.notes
             FROM fees f
@@ -824,7 +871,7 @@ def export_students_excel():
         ''', student_ids).fetchall()
 
         annual_charges = conn.execute(f'''
-            SELECT a.id, s.name as student_name, s.father_name, s.class, 
+            SELECT a.id, a.student_id, s.name as student_name, s.father_name, s.class, 
                    a.year, a.paid_amount, a.date_paid, a.payment_mode, a.reference_no, 
                    a.collected_by, a.notes
             FROM annual_charges_payments a
