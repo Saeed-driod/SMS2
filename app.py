@@ -3938,6 +3938,10 @@ def defaulters_view():
     target_month = request.args.get('month', MONTH_NUM_TO_NAME[datetime.now().month])
     target_year = request.args.get('year', datetime.now().year, type=int)
     class_filter = request.args.get('class_filter', '').strip()
+    status_filter = request.args.get('status_filter', 'active').strip() or 'active'
+    if status_filter not in ['active', 'withdrawn', 'all']:
+        status_filter = 'active'
+
     min_amount_raw = request.args.get('min_amount', '').strip()
     try:
         min_amount = float(min_amount_raw) if min_amount_raw else 0.0
@@ -3948,11 +3952,16 @@ def defaulters_view():
     active_campus_id = get_active_campus_id()
     conn = get_db_connection()
     
-    class_query = "SELECT DISTINCT class FROM students"
+    class_query = "SELECT DISTINCT class FROM students WHERE 1=1"
     class_params = []
+    if status_filter == 'active':
+        class_query += " AND (status IS NULL OR status = 'active')"
+    elif status_filter == 'withdrawn':
+        class_query += " AND status = 'withdrawn'"
+
     if active_campus_id:
-        class_query += " WHERE campus_id = ?"
-        class_params = [active_campus_id]
+        class_query += " AND campus_id = ?"
+        class_params.append(active_campus_id)
     class_query += " ORDER BY class"
     classes = conn.execute(class_query, class_params).fetchall()
     classes = [r['class'] for r in classes]
@@ -3964,6 +3973,11 @@ def defaulters_view():
         WHERE 1=1
     '''
     params = []
+    if status_filter == 'active':
+        query += " AND (s.status IS NULL OR LOWER(s.status) = 'active') AND LOWER(COALESCE(s.status, 'active')) != 'withdrawn'"
+    elif status_filter == 'withdrawn':
+        query += " AND LOWER(s.status) = 'withdrawn'"
+
     if active_campus_id:
         query += " AND s.campus_id = ?"
         params.append(active_campus_id)
@@ -3999,6 +4013,7 @@ def defaulters_view():
                 'phone_number': s['phone_number'],
                 'class': s['class'],
                 'campus_name': s['campus_name'],
+                'status': s['status'] if 'status' in s.keys() and s['status'] else 'active',
                 'monthly_fee': details['monthly_fee'],
                 'arrears': details['arrears'],
                 'total_payable': details['total_payable'],
@@ -4016,6 +4031,7 @@ def defaulters_view():
                            defaulters=defaulters,
                            classes=classes,
                            class_filter=class_filter,
+                           status_filter=status_filter,
                            min_amount=min_amount_raw,
                            target_month=target_month,
                            target_year=target_year,

@@ -34,7 +34,7 @@
                 {% endfor %}
             </select>
         </div>
-        <div class="col-lg-3 col-md-4 col-sm-6">
+        <div class="col-lg-2 col-md-4 col-sm-6">
             <label for="class_filter" class="form-label">Class Filter</label>
             <select class="form-select" id="class_filter" name="class_filter">
                 <option value="">All Classes</option>
@@ -43,11 +43,19 @@
                 {% endfor %}
             </select>
         </div>
-        <div class="col-lg-3 col-md-6 col-sm-6">
+        <div class="col-lg-2 col-md-4 col-sm-6">
+            <label for="status_filter" class="form-label">Student Status</label>
+            <select class="form-select" id="status_filter" name="status_filter">
+                <option value="active" {% if status_filter == 'active' or not status_filter %}selected{% endif %}>Active Only</option>
+                <option value="withdrawn" {% if status_filter == 'withdrawn' %}selected{% endif %}>Withdrawn Only</option>
+                <option value="all" {% if status_filter == 'all' %}selected{% endif %}>All Students</option>
+            </select>
+        </div>
+        <div class="col-lg-2 col-md-4 col-sm-6">
             <label for="min_amount" class="form-label d-flex justify-content-between">
-                <span>Min Amount (Dues &ge;)</span>
+                <span>Min Dues (&ge;)</span>
                 {% if min_amount %}
-                <span class="text-danger small font-monospace">&ge; Rs. {{ min_amount }}</span>
+                <span class="text-danger small font-monospace">&ge; {{ min_amount }}</span>
                 {% endif %}
             </label>
             <div class="input-group">
@@ -55,11 +63,11 @@
                 <input type="number" step="any" min="0" class="form-control" id="min_amount" name="min_amount" placeholder="e.g. 5000" value="{{ min_amount }}">
             </div>
         </div>
-        <div class="col-lg-2 col-md-6 col-sm-12 d-flex gap-2">
+        <div class="col-lg-2 col-md-4 col-sm-12 d-flex gap-2">
             <button type="submit" class="btn btn-primary flex-grow-1">
                 <i class="fa-solid fa-filter me-1"></i> Filter
             </button>
-            {% if min_amount or class_filter %}
+            {% if min_amount or class_filter or (status_filter and status_filter != 'active') %}
             <a href="{{ url_for('defaulters_view', month=target_month, year=target_year) }}" class="btn btn-outline-secondary" title="Reset Filters">
                 <i class="fa-solid fa-xmark"></i>
             </a>
@@ -86,6 +94,19 @@
         <h4 class="mb-1 text-danger font-weight-bold"><i class="fa-solid fa-triangle-exclamation me-2"></i>Outstanding Recovery</h4>
         <span class="text-secondary small">
             Total unpaid amount across listed defaulters
+            {% if status_filter == 'withdrawn' %}
+            <span class="badge bg-danger bg-opacity-25 text-danger border border-danger ms-2">
+                <i class="fa-solid fa-user-slash me-1"></i>Withdrawn Students Only
+            </span>
+            {% elif status_filter == 'all' %}
+            <span class="badge bg-secondary bg-opacity-25 text-light border border-secondary ms-2">
+                All Students (Active + Withdrawn)
+            </span>
+            {% else %}
+            <span class="badge bg-success bg-opacity-25 text-success border border-success ms-2">
+                <i class="fa-solid fa-user-check me-1"></i>Active Students Only
+            </span>
+            {% endif %}
             {% if min_amount %}
             <span class="badge bg-danger bg-opacity-25 text-danger border border-danger ms-2">
                 <i class="fa-solid fa-filter me-1"></i>Dues &ge; Rs. {{ min_amount }}
@@ -140,7 +161,12 @@
                     {% for d in defaulters %}
                     <tr class="align-middle">
                         <td class="text-secondary font-monospace">{{ d.id }}</td>
-                        <td><span class="fw-bold text-white">{{ d.name }}</span></td>
+                        <td>
+                            <span class="fw-bold text-white">{{ d.name }}</span>
+                            {% if d.status == 'withdrawn' %}
+                            <span class="badge bg-danger bg-opacity-25 text-danger border border-danger ms-1 small" style="font-size: 10px;">Withdrawn</span>
+                            {% endif %}
+                        </td>
                         <td class="text-secondary">{{ d.father_name }}</td>
                         <td>
                             {% if d.phone_number %}
