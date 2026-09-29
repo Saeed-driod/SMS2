@@ -179,7 +179,12 @@ URDU_NAME_MAP = {
     'فریحہ': 'Fariha', 'امنہ': 'Amna', 'آمنہ': 'Amna', 'اسماء': 'Asma', 'اسما': 'Asma',
     'فضاء': 'Fiza', 'فضا': 'Fiza', 'کنزہ': 'Kinza', 'مروہ': 'Marwa', 'شفا': 'Shifa',
     'عروج': 'Urooj', 'زہرا': 'Zahra', 'زہرہ': 'Zahra', 'ابیہا': 'Abiha', 'حافظ': 'Hafiz',
-    'قاری': 'Qari', 'صاحب': 'Sahib'
+    'قاری': 'Qari', 'صاحب': 'Sahib',
+    'عمران': 'Imran', 'عرفان': 'Irfan', 'کامران': 'Kamran', 'رضوان': 'Rizwan',
+    'معاویہ': 'Muavia', 'شہیر': 'Shaheer', 'جواد': 'Jawad', 'فیضان': 'Faizan',
+    'ارحم': 'Arham', 'اذان': 'Azan', 'مبین': 'Mubeen', 'دلاور': 'Dilawar',
+    'دلبر': 'Dilbar', 'بشیر': 'Bashir', 'عامر': 'Aamir', 'عمیر': 'Umair',
+    'عاصم': 'Asim', 'عاطف': 'Atif', 'عقیل': 'Aqeel', 'عدیل': 'Adeel', 'عباس': 'Abbas'
 }
 
 URDU_CHAR_MAP = {
@@ -208,7 +213,10 @@ URDU_WORDS_MAP = {
     'پینڈنگ': 'pending', 'ٹوٹل': 'total', 'کل': 'total', 'بچے': 'bache', 'طالب علم': 'student',
     'کی': 'ki', 'کا': 'ka', 'کے': 'ke', 'میں': 'mein', 'ہے': 'hai', 'ہیں': 'hain', 'کو': 'ko',
     'سے': 'se', 'پر': 'par', 'اور': 'aur', 'والد': 'walid', 'ابو': 'walid', 'باپ': 'walid',
-    'فون': 'phone', 'موبائل': 'mobile', 'نمبر': 'number', 'رابطہ': 'rabta', 'نام': 'naam'
+    'فون': 'phone', 'موبائل': 'mobile', 'نمبر': 'number', 'رابطہ': 'rabta', 'نام': 'naam',
+    'فادر': 'father', 'جتنے': 'jitne', 'جتنی': 'jitni', 'کتنے': 'kitne', 'کتنی': 'kitni',
+    'مجھے': 'mujhe', 'ہمیں': 'humein', 'جن': 'jin', 'جنکے': 'jinke', 'جنکا': 'jinka',
+    'جنکی': 'jinki', 'وہ': 'wo', 'نے': 'ne', 'کیا': 'kya', 'کون': 'kon', 'کس': 'kis'
 }
 
 URDU_VERBAL_AMOUNTS = {
@@ -338,10 +346,17 @@ def find_students(query, class_name=None, campus_id=None, limit=8):
             params.extend([class_name.lower(), f"%{class_name.lower()}%"])
             
     if query_str.isdigit():
-        sql += " AND (s.id = ? OR CAST(s.id AS TEXT) LIKE ?)"
-        params.extend([int(query_str), f"%{query_str}%"])
-        sql += " ORDER BY s.name ASC LIMIT ?"
-        params.append(limit)
+        exact_id = int(query_str)
+        # Check exact ID first
+        exact_sql = sql + " AND s.id = ?"
+        exact_params = list(params) + [exact_id]
+        exact_row = conn.execute(exact_sql, exact_params).fetchone()
+        if exact_row:
+            conn.close()
+            return [dict(exact_row)]
+        # Otherwise partial ID match
+        sql += " AND CAST(s.id AS TEXT) LIKE ? ORDER BY s.id ASC LIMIT ?"
+        params.extend([f"%{query_str}%", limit])
         rows = conn.execute(sql, params).fetchall()
         conn.close()
         return [dict(r) for r in rows]
@@ -805,9 +820,37 @@ def parse_with_rule_engine(message, campus_id=None, user_session=None, history=N
         class_match = re.search(r'\b(nursery|prep|playgroup|play group|pg|one|two|three|four|five|six|seven|eight|nine|ten)\b', raw)
     class_hint = class_match.group(1) if class_match else None
     
+    # Conversational Stopwords & Name Extraction for natural voice & text queries
+    CONV_STOPWORDS = r'\b(mjhe|mujhe|humein|ap|aap|bhi|se|jtne|jitne|jitna|kitne|kitna|ktne|bache|bachay|hain|hai|he|h|oh|woh|wo|jn|jin|jinke|jinka|jinki|ne|un|inka|unka|ke|ka|ki|k|ko|mein|me|mai|may|par|aur|to|toh|batao|btayein|btao|bataen|btado|batado|dikhao|dekho|chahiye|record|list|total|naam|name|father|walid|fadr|walidain|fee|fees|status|check|karo|details|info|of|kitni|kya|kia|class|grade|jamaat|roll|no|std|phone|number|mobile|walay|wale|campus|campuses|school|defaulter|defaulters|arrears|arrear|baqaya|pending|summary|stats|overview|collection|strength|count)\b'
+    
+    clean_conv = re.sub(CONV_STOPWORDS, ' ', raw, flags=re.IGNORECASE)
+    clean_conv = re.sub(r'[^a-zA-Z0-9\s]', ' ', clean_conv)
+    conv_tokens = [w for w in clean_conv.split() if len(w) > 1]
+    seen_tokens = set()
+    unique_tokens = []
+    for t in conv_tokens:
+        if t.lower() not in seen_tokens:
+            seen_tokens.add(t.lower())
+            unique_tokens.append(t)
+    conversational_name = ' '.join(unique_tokens)
+
+    clean_name = raw
+    if class_match:
+        clean_name = clean_name[:class_match.start()] + ' ' + clean_name[class_match.end():]
+    clean_name = re.sub(r'[^a-zA-Z0-9\s]', ' ', clean_name)
+    clean_name = re.sub(
+        r'\b(ki|ka|ke|k|ko|se|par|aur|fee|fees|status|check|karo|batao|btao|bataen|btayein|details|info|of|kitni|kitne|kitna|hai|he|h|hain|kya|kia|class|grade|jamaat|roll|no|std|walid|father|phone|number|mobile|naam|name|campus|campuses|school|me|mai|may|mein|defaulter|defaulters|arrears|arrear|baqaya|pending|summary|stats|overview|collection|strength|count|bache|bachay)\b',
+        ' ',
+        clean_name,
+        flags=re.IGNORECASE
+    ).strip()
+    clean_name = ' '.join(clean_name.split())
+
+    effective_name = conversational_name if (conversational_name and len(conversational_name.split()) <= 4) else (clean_name if (clean_name and len(clean_name.split()) <= 4) else None)
+
     # 4. Check for Student Count / Strength in a class
-    # e.g.: "class 2 me kitne bache hain", "class 5 student count"
-    if class_hint and any(k in raw for k in ['kitne bache', 'kitne student', 'total bache', 'total student', 'strength', 'count']):
+    # e.g.: "class 2 me kitne bache hain", "class 5 student count" (only if no student/father name)
+    if class_hint and not effective_name and any(k in raw for k in ['kitne bache', 'kitne student', 'total bache', 'total student', 'strength', 'count']):
         conn = get_db_connection()
         aliases = get_class_aliases(class_hint)
         conds = ["LOWER(class) = ? OR LOWER(class) LIKE ?" for _ in aliases]
@@ -826,7 +869,7 @@ def parse_with_rule_engine(message, campus_id=None, user_session=None, history=N
     
     # 5. Check Defaulters List
     # e.g.: "defaulters dikhao", "class 5 ke defaulters", "pending fees"
-    if any(k in raw for k in ['defaulter', 'defaulters', 'pending fee', 'baqaya', 'arrear', 'fees pending']):
+    if any(k in raw for k in ['defaulter', 'defaulters', 'pending fee', 'baqaya', 'arrear', 'fees pending']) and not effective_name:
         defaulters = get_class_defaulters(class_name=class_hint, campus_id=campus_id, limit=8)
         if not defaulters:
             target = f"Class {class_hint.title()}" if class_hint else "selected campus"
@@ -841,8 +884,14 @@ def parse_with_rule_engine(message, campus_id=None, user_session=None, history=N
         }
 
     # 6. Campus Summary / Overview
-    # e.g.: "summary", "stats", "total student", "kitne bache", "collection"
-    if any(k in raw for k in ['summary', 'stats', 'total student', 'kitne bache', 'collection', 'campus overview']):
+    # e.g.: "summary", "stats", "campus overview", "kitne bache" (without specific student name)
+    is_campus_stats_trigger = any(k in raw for k in ['summary', 'stats', 'campus overview', 'collection']) or (
+        any(k in raw for k in ['total student', 'kitne bache', 'total bache', 'kitny bache', 'kitny bachay', 'kitne student'])
+        and not effective_name
+        and not class_hint
+        and not explicit_id
+    )
+    if is_campus_stats_trigger:
         stats = get_campus_stats(campus_id=campus_id)
         return {
             'text': f"📊 **Campus Overview & Stats ({stats['current_month']} {stats['current_year']}):**\n\n"
@@ -928,28 +977,18 @@ def parse_with_rule_engine(message, campus_id=None, user_session=None, history=N
                     'text': f"⚠️ Student system me nahi mila. Barah-e-karam sahi student naam ya ID darj karein (jaise: *'ID 123 ki fee {int(new_amount)} kar do'*)."
                 }
 
-    # 8. Check Student Fee & Profile
+    # 8. Check Student Fee & Profile / Search
     # Only search if there is actual student or fee intent:
     has_student_intent = bool(explicit_id) or bool(class_hint) or any(k in raw for k in [
         'fee', 'fees', 'arrear', 'arrears', 'baqaya', 'due', 'challan', 
         'walid', 'father', 'phone', 'mobile', 'details', 'record', 'profile', 
-        'parhta', 'student', 'bache', 'roll no', 'ledger', 'balance'
+        'parhta', 'student', 'bache', 'bachay', 'roll no', 'ledger', 'balance',
+        'kitne', 'jitne', 'list', 'batao', 'naam', 'name'
     ])
 
-    clean_name = raw
-    if class_match:
-        clean_name = clean_name[:class_match.start()] + ' ' + clean_name[class_match.end():]
-    clean_name = re.sub(r'[^a-zA-Z0-9\s]', ' ', clean_name)
-    clean_name = re.sub(
-        r'\b(ki|ka|ke|k|fee|fees|status|check|karo|batao|details|info|of|kitni|hai|he|h|kya|class|grade|jamaat|roll|no|std|walid|father|phone|number|mobile|naam|name)\b',
-        ' ',
-        clean_name
-    ).strip()
-    clean_name = ' '.join(clean_name.split())
-
-    # Only run student search if explicit ID or explicit student intent with reasonable name length
-    if explicit_id or (clean_name and has_student_intent and len(clean_name.split()) <= 4):
-        target_q = explicit_id if explicit_id else clean_name
+    # Run student search if explicit ID or explicit student intent
+    if explicit_id or (effective_name and has_student_intent):
+        target_q = explicit_id if explicit_id else effective_name
         candidates = find_students(target_q, class_name=class_hint, campus_id=campus_id)
         if len(candidates) == 1:
             s_cand = candidates[0]
@@ -983,14 +1022,19 @@ def parse_with_rule_engine(message, campus_id=None, user_session=None, history=N
                             f"*'{status_info['name']} ki fee 2500 kar do'*"
                 }
         elif len(candidates) > 1:
-            options = "\n".join([f"• ID {c['id']}: **{c['name']}** (Class: {c['class']}, Father: {c['father_name'] or 'N/A'}, Fee: Rs. {float(c['monthly_fee'] or 0):,.0f})" for c in candidates[:6]])
+            is_count_query = any(k in raw for k in ['kitne bache', 'kitna bache', 'total bache', 'jitne bache', 'list', 'bache hain', 'walid', 'father'])
+            header = f"📋 **{target_q}** نام / ولدیت سے متعلق سسٹم میں کل **{len(candidates)} طلباء (Students)** کا ریکارڈ ملا ہے:" if is_count_query else f"Is naam se aik se zyada students mile hain:"
+            options = "\n".join([f"• ID {c['id']}: **{c['name']}** (Class: {c['class']}, Father: {c['father_name'] or 'N/A'}, Fee: Rs. {float(c['monthly_fee'] or 0):,.0f})" for c in candidates[:8]])
             return {
-                'text': f"Is naam se aik se zyada students mile hain:\n\n{options}\n\n"
-                        f"Barah-e-karam student ka ID sath batayein (jaise: *'ID {candidates[0]['id']} ki fee batao'*)."
+                'text': f"{header}\n\n{options}\n\n"
+                        f"💡 Kisi specific student ki mukammal fee tafseelat dekhne ke liye likhein: *'ID {candidates[0]['id']} ki fee batao'* ya *'ID {candidates[0]['id']} ki fee 2500 kar do'*."
             }
-        elif clean_name and has_student_intent:
-            target_desc = f"'{clean_name}'" + (f" (Class {class_hint.title()})" if class_hint else "")
-            return {'text': f"{polite_prefix}⚠️ Student **{target_desc}** system me nahi mila. Barah-e-karam student ka naam ya ID verify karein."}
+        elif effective_name and has_student_intent:
+            target_desc = f"'{effective_name}'" + (f" (Class {class_hint.title()})" if class_hint else "")
+            return {
+                'text': f"🔍 Student **{target_desc}** system me nahi mila.\n\n"
+                        f"Barah-e-karam check karein ke naam ke spelling theek hain ya student ka numeric ID darj karein (jaise: *'ID 123 ki fee batao'*)."
+            }
 
     # 9. Natural Conversational Fallback (Just like ChatGPT)
     return {
