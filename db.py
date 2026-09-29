@@ -209,11 +209,17 @@ def get_db_connection():
         if pool:
             try:
                 raw_conn = pool.getconn()
-                # Test connection is alive
-                raw_conn.isolation_level
+                if raw_conn.closed:
+                    raise Exception("Connection closed")
+                with raw_conn.cursor() as test_cur:
+                    test_cur.execute("SELECT 1")
                 return PgConnectionWrapper(raw_conn, pool=pool)
             except Exception:
-                pass
+                if pool and 'raw_conn' in locals() and raw_conn:
+                    try:
+                        pool.putconn(raw_conn, close=True)
+                    except Exception:
+                        pass
         import psycopg2
         conn = psycopg2.connect(db_url)
         return PgConnectionWrapper(conn)

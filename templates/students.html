@@ -6,7 +6,12 @@
 <div class="row align-items-center mb-4">
     <div class="col-md-6">
         <h1 class="page-title mb-1"><i class="fa-solid fa-user-graduate text-primary me-2"></i>Students Registry</h1>
-        <p class="text-secondary small mb-0">Total Enrolled: <strong class="text-white">{{ total_students }}</strong> students</p>
+        <p class="text-secondary small mb-0">
+            Displaying: <strong class="text-white">{{ "{:,}".format(total_students) }}</strong> students &bull;
+            Campus Active: <span class="text-success fw-bold">{{ "{:,}".format(campus_active_count) }}</span> &bull;
+            Withdrawn: <span class="text-warning fw-bold">{{ "{:,}".format(campus_withdrawn_count) }}</span> &bull;
+            Graduate: <span class="text-info fw-bold">{{ "{:,}".format(campus_graduate_count) }}</span>
+        </p>
     </div>
     <div class="col-md-6 text-md-end mt-3 mt-md-0">
         <a href="{{ url_for('export_students_excel', class_filter=class_filter, campus_filter=campus_filter, status_filter=status_filter, search=search) }}" class="btn btn-outline-success btn-sm px-3 me-2" title="Download Excel Sheet of displayed students">
@@ -41,8 +46,9 @@
         <div class="col-md-2">
             <select class="form-select" name="status_filter">
                 <option value="">All Statuses</option>
-                <option value="active" {% if status_filter == 'active' %}selected{% endif %}>Active Only</option>
+                <option value="active" {% if status_filter == 'active' %}selected{% endif %}>Active Enrolled Only</option>
                 <option value="withdrawn" {% if status_filter == 'withdrawn' %}selected{% endif %}>Withdrawn Only</option>
+                <option value="graduate" {% if status_filter == 'graduate' %}selected{% endif %}>Graduate / Alumni Only</option>
             </select>
         </div>
         
@@ -118,7 +124,11 @@
                         </td>
                         <td><span class="badge badge-class">Class {{ student.class }}</span></td>
                         <td>
-                            {% if student.status == 'withdrawn' %}
+                            {% if student.class|lower == 'graduate' or student.status == 'graduate' %}
+                            <span class="badge bg-purple bg-opacity-25 text-info border border-info border-opacity-50" style="font-size: 0.72rem;">
+                                <i class="fa-solid fa-graduation-cap me-1"></i>Graduate
+                            </span>
+                            {% elif student.status == 'withdrawn' %}
                             <span class="badge bg-danger bg-opacity-25 text-danger border border-danger border-opacity-50" style="font-size: 0.72rem;">
                                 <i class="fa-solid fa-user-slash me-1"></i>Withdrawn
                             </span>

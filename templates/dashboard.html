@@ -37,17 +37,59 @@
     </div>
 </div>
 
+<!-- Student Strength Status Breakdown Widget -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="glass-panel p-3 d-flex flex-wrap align-items-center justify-content-between gap-3">
+            <div class="d-flex align-items-center gap-3">
+                <div class="avatar-circle" style="background: rgba(56, 189, 248, 0.12); color: #38bdf8; width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem;">
+                    <i class="fa-solid fa-users"></i>
+                </div>
+                <div>
+                    <h6 class="mb-0 text-white fw-bold">Campus Student Strength Breakdown</h6>
+                    <span class="text-secondary small">
+                        {% if active_campus_id %}{{ active_campus_name }}{% else %}All Branches Consolidated{% endif %} &bull; <span class="text-info">Graduates excluded from active count</span>
+                    </span>
+                </div>
+            </div>
+            <div class="d-flex flex-wrap align-items-center gap-2">
+                <a href="{{ url_for('students_view', status_filter='active') }}" class="d-flex align-items-center gap-2 px-3 py-2 rounded-3 text-decoration-none" style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.25);" title="View Active Students">
+                    <i class="fa-solid fa-circle-check text-success fs-5"></i>
+                    <div>
+                        <div class="text-secondary text-uppercase fw-semibold" style="font-size: 0.65rem;">Active Students</div>
+                        <div class="fw-bold text-success fs-6">{{ "{:,}".format(student_count) }}</div>
+                    </div>
+                </a>
+                <a href="{{ url_for('students_view', status_filter='withdrawn') }}" class="d-flex align-items-center gap-2 px-3 py-2 rounded-3 text-decoration-none" style="background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.25);" title="View Withdrawn Students">
+                    <i class="fa-solid fa-circle-xmark text-warning fs-5"></i>
+                    <div>
+                        <div class="text-secondary text-uppercase fw-semibold" style="font-size: 0.65rem;">Withdrawn Students</div>
+                        <div class="fw-bold text-warning fs-6">{{ "{:,}".format(withdrawn_count) }}</div>
+                    </div>
+                </a>
+                <a href="{{ url_for('students_view', status_filter='graduate') }}" class="d-flex align-items-center gap-2 px-3 py-2 rounded-3 text-decoration-none" style="background: rgba(168, 85, 247, 0.12); border: 1px solid rgba(168, 85, 247, 0.25);" title="View Graduate Alumni">
+                    <i class="fa-solid fa-graduation-cap text-info fs-5"></i>
+                    <div>
+                        <div class="text-secondary text-uppercase fw-semibold" style="font-size: 0.65rem;">Graduates / Alumni</div>
+                        <div class="fw-bold text-info fs-6">{{ "{:,}".format(graduate_count) }}</div>
+                    </div>
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Colorful Analytical Cards Grid -->
 <div class="dashboard-grid-v2">
-    <!-- Card 1: Total Enrolled Students -->
+    <!-- Card 1: Total Enrolled Active Students -->
     <div class="analytics-card card-theme-blue">
         <div>
-            <div class="card-num">{{ student_count }}</div>
-            <div class="card-label">Total Students</div>
+            <div class="card-num">{{ "{:,}".format(student_count) }}</div>
+            <div class="card-label">Active Students</div>
         </div>
-        <div class="card-footer-info">
-            <span>Active Enrolled</span>
-            <i class="fa-solid fa-user-graduate"></i>
+        <div class="card-footer-info d-flex justify-content-between align-items-center">
+            <span title="Excludes Graduates & Withdrawn">Currently Enrolled</span>
+            <i class="fa-solid fa-user-check"></i>
         </div>
     </div>
 

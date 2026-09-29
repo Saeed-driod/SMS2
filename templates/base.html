@@ -38,6 +38,14 @@
                         </a>
                     </li>
                     <li class="nav-item">
+                        <a href="javascript:void(0)" id="sidebarAiCopilotTrigger" class="nav-link ai-nav-link d-flex justify-content-between align-items-center" title="Open AI Copilot (Ctrl + K)">
+                            <div class="d-flex align-items-center gap-2">
+                                <i class="fa-solid fa-wand-magic-sparkles text-info"></i><span>AI Copilot</span>
+                            </div>
+                            <span class="badge rounded-pill text-white" style="font-size: 0.62rem; background: linear-gradient(135deg, #2563eb, #8b5cf6); padding: 2px 7px;">Gemini</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
                         <a href="{{ url_for('students_view') }}" class="nav-link {% if request.path == '/students' or request.path.startswith('/students/edit') or request.path.startswith('/students/add') %}active{% endif %}">
                             <i class="fa-solid fa-user-graduate"></i><span>Students Registry</span>
                         </a>
@@ -146,6 +154,27 @@
                             <span>{{ active_campus_name }}</span>
                         </div>
                         {% endif %}
+                    </div>
+
+                    <!-- Campus Student Strength Breakdown Badges -->
+                    <div class="topbar-strength-pill d-none d-md-flex align-items-center gap-2 px-2.5 py-1 rounded-pill" style="background: rgba(15, 23, 42, 0.75); border: 1px solid rgba(255, 255, 255, 0.1); font-size: 0.76rem;" title="Campus Strength Breakdown (Active excludes graduates)">
+                        <a href="{{ url_for('students_view', status_filter='active') }}" class="badge-strength-link text-decoration-none d-flex align-items-center gap-1.5" title="Active Enrolled Students in {{ active_campus_name }} (Excludes Graduates)">
+                            <span class="status-dot-green"></span>
+                            <span class="text-secondary small">Active:</span>
+                            <strong class="text-success">{{ "{:,}".format(campus_active_count) }}</strong>
+                        </a>
+                        <span class="text-secondary opacity-25">|</span>
+                        <a href="{{ url_for('students_view', status_filter='withdrawn') }}" class="badge-strength-link text-decoration-none d-flex align-items-center gap-1.5" title="Withdrawn Students in {{ active_campus_name }}">
+                            <span class="status-dot-amber"></span>
+                            <span class="text-secondary small">Withdrawn:</span>
+                            <strong class="text-warning">{{ "{:,}".format(campus_withdrawn_count) }}</strong>
+                        </a>
+                        <span class="text-secondary opacity-25">|</span>
+                        <a href="{{ url_for('students_view', status_filter='graduate') }}" class="badge-strength-link text-decoration-none d-flex align-items-center gap-1.5" title="Graduates / Alumni (Passed Out) in {{ active_campus_name }}">
+                            <i class="fa-solid fa-graduation-cap text-info" style="font-size: 0.72rem;"></i>
+                            <span class="text-secondary small">Graduate:</span>
+                            <strong class="text-info">{{ "{:,}".format(campus_graduate_count) }}</strong>
+                        </a>
                     </div>
 
                     <!-- User Profile summary -->

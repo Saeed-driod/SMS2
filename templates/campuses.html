@@ -62,15 +62,21 @@
                                     </div>
                                 </td>
                                 <td>
-                                    {% if campus.student_count > 0 %}
-                                    <span class="badge bg-primary bg-opacity-25 text-info border border-info border-opacity-50">
-                                        <i class="fa-solid fa-user-graduate me-1"></i> {{ campus.student_count }} Students
-                                    </span>
-                                    {% else %}
-                                    <span class="badge bg-secondary bg-opacity-25 text-secondary">
-                                        0 Students
-                                    </span>
-                                    {% endif %}
+                                    <div class="d-flex flex-column gap-1">
+                                        <div>
+                                            <span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-50">
+                                                <i class="fa-solid fa-user-check me-1"></i> {{ campus.active_count or campus.student_count or 0 }} Active
+                                            </span>
+                                        </div>
+                                        <div class="d-flex gap-1" style="font-size: 0.68rem;">
+                                            <span class="badge bg-warning bg-opacity-15 text-warning border border-warning border-opacity-25" title="Withdrawn Students">
+                                                {{ campus.withdrawn_count or 0 }} Withdrawn
+                                            </span>
+                                            <span class="badge bg-purple bg-opacity-15 text-info border border-info border-opacity-25" title="Graduate Alumni">
+                                                {{ campus.graduate_count or 0 }} Grad
+                                            </span>
+                                        </div>
+                                    </div>
                                 </td>
                                 <td>
                                     <span class="badge bg-success-custom text-success">

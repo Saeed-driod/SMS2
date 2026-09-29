@@ -110,12 +110,34 @@ def inject_campuses():
             if c:
                 active_campus_name = c['name']
                 
+        # Calculate Active, Withdrawn, and Graduate student strength for active campus
+        # Note: Graduates leave the campus, so they are not included in Active Students.
+        sql_counts = """
+            SELECT 
+                SUM(CASE WHEN (status = 'active' OR status IS NULL) AND LOWER(class) != 'graduate' THEN 1 ELSE 0 END) as active_count,
+                SUM(CASE WHEN status = 'withdrawn' AND LOWER(class) != 'graduate' THEN 1 ELSE 0 END) as withdrawn_count,
+                SUM(CASE WHEN LOWER(class) = 'graduate' OR status = 'graduate' THEN 1 ELSE 0 END) as graduate_count
+            FROM students
+        """
+        if active_campus_id:
+            sql_counts += " WHERE campus_id = ?"
+            c_row = conn.execute(sql_counts, (active_campus_id,)).fetchone()
+        else:
+            c_row = conn.execute(sql_counts).fetchone()
+
+        campus_active_count = int(c_row['active_count'] or 0) if c_row else 0
+        campus_withdrawn_count = int(c_row['withdrawn_count'] or 0) if c_row else 0
+        campus_graduate_count = int(c_row['graduate_count'] or 0) if c_row else 0
+
         conn.close()
         return {
             'campuses_list': campuses,
             'active_campus_id': active_campus_id,
             'active_campus_name': active_campus_name,
-            'pending_delete_count': pending_delete_count
+            'pending_delete_count': pending_delete_count,
+            'campus_active_count': campus_active_count,
+            'campus_withdrawn_count': campus_withdrawn_count,
+            'campus_graduate_count': campus_graduate_count
         }
     return {}
 
@@ -1059,8 +1081,16 @@ def build_student_query_filters(search='', class_filter='', campus_filter=None, 
         params.append(class_filter)
 
     if status_filter:
-        where_sql += " AND s.status = ?"
-        params.append(status_filter)
+        s_filt = status_filter.lower().strip()
+        if s_filt == 'active':
+            where_sql += " AND (s.status = 'active' OR s.status IS NULL) AND LOWER(s.class) != 'graduate'"
+        elif s_filt == 'withdrawn':
+            where_sql += " AND s.status = 'withdrawn' AND LOWER(s.class) != 'graduate'"
+        elif s_filt == 'graduate':
+            where_sql += " AND (LOWER(s.class) = 'graduate' OR s.status = 'graduate')"
+        else:
+            where_sql += " AND s.status = ?"
+            params.append(status_filter)
         
     return where_sql, params
 
@@ -1162,18 +1192,25 @@ def dashboard():
     campus_id = get_active_campus_id()
     conn = get_db_connection()
     
-    query_students = "SELECT COUNT(*) FROM students"
+    # Active students strictly excludes graduates and withdrawn students
+    query_students = "SELECT COUNT(*) FROM students WHERE (status = 'active' OR status IS NULL) AND LOWER(class) != 'graduate'"
+    query_withdrawn = "SELECT COUNT(*) FROM students WHERE status = 'withdrawn' AND LOWER(class) != 'graduate'"
+    query_graduates = "SELECT COUNT(*) FROM students WHERE LOWER(class) = 'graduate' OR status = 'graduate'"
     query_payments = "SELECT COUNT(*) FROM fees f JOIN students s ON f.student_id = s.id"
     query_collected = "SELECT SUM(f.paid_amount) FROM fees f JOIN students s ON f.student_id = s.id"
     params = []
     
     if campus_id:
-        query_students += " WHERE campus_id = ?"
+        query_students += " AND campus_id = ?"
+        query_withdrawn += " AND campus_id = ?"
+        query_graduates += " AND campus_id = ?"
         query_payments += " WHERE s.campus_id = ?"
         query_collected += " WHERE s.campus_id = ?"
         params = [campus_id]
         
     student_count = conn.execute(query_students, params).fetchone()[0]
+    withdrawn_count = conn.execute(query_withdrawn, params).fetchone()[0]
+    graduate_count = conn.execute(query_graduates, params).fetchone()[0]
     payment_count = conn.execute(query_payments, params).fetchone()[0]
     total_collected = conn.execute(query_collected, params).fetchone()[0] or 0
     
@@ -1322,6 +1359,8 @@ def dashboard():
     
     return render_template('dashboard.html', 
                            student_count=student_count,
+                           withdrawn_count=withdrawn_count,
+                           graduate_count=graduate_count,
                            payment_count=payment_count,
                            total_collected=total_collected,
                            daily_date=daily_date,
@@ -4070,7 +4109,11 @@ def campuses_view():
                 flash(f"Error creating campus '{code}': {str(e)}", 'danger')
                 
     campuses = conn.execute('''
-        SELECT c.*, COUNT(s.id) as student_count 
+        SELECT c.*, 
+            SUM(CASE WHEN (s.status = 'active' OR s.status IS NULL) AND LOWER(s.class) != 'graduate' THEN 1 ELSE 0 END) as active_count,
+            SUM(CASE WHEN s.status = 'withdrawn' AND LOWER(s.class) != 'graduate' THEN 1 ELSE 0 END) as withdrawn_count,
+            SUM(CASE WHEN LOWER(s.class) = 'graduate' OR s.status = 'graduate' THEN 1 ELSE 0 END) as graduate_count,
+            SUM(CASE WHEN (s.status = 'active' OR s.status IS NULL) AND LOWER(s.class) != 'graduate' THEN 1 ELSE 0 END) as student_count 
         FROM campuses c 
         LEFT JOIN students s ON s.campus_id = c.id 
         GROUP BY c.id 

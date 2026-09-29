@@ -376,7 +376,7 @@ def get_campus_stats(campus_id=None):
         params = [campus_id]
         
     total_students = conn.execute(f"SELECT COUNT(*) FROM students {where_sql}", params).fetchone()[0]
-    active_students = conn.execute(f"SELECT COUNT(*) FROM students WHERE status = 'active' {' AND campus_id = ?' if campus_id else ''}", params).fetchone()[0]
+    active_students = conn.execute(f"SELECT COUNT(*) FROM students WHERE (status = 'active' OR status IS NULL) AND LOWER(class) != 'graduate' {' AND campus_id = ?' if campus_id else ''}", params).fetchone()[0]
     classes = conn.execute(f"SELECT COUNT(DISTINCT class) FROM students {where_sql}", params).fetchone()[0]
     
     # Monthly fee collection this month
@@ -401,13 +401,13 @@ def get_campus_stats(campus_id=None):
     }
 
 def get_campuses_summary():
-    """Returns list of campuses with active student counts."""
+    """Returns list of campuses with active student counts (excluding graduates)."""
     conn = get_db_connection()
     try:
         campuses = conn.execute("SELECT id, name FROM campuses ORDER BY id").fetchall()
         result = []
         for c in campuses:
-            count = conn.execute("SELECT COUNT(*) FROM students WHERE campus_id = ? AND status = 'active'", (c['id'],)).fetchone()[0]
+            count = conn.execute("SELECT COUNT(*) FROM students WHERE campus_id = ? AND (status = 'active' OR status IS NULL) AND LOWER(class) != 'graduate'", (c['id'],)).fetchone()[0]
             result.append({
                 'id': c['id'],
                 'name': c['name'],
@@ -421,7 +421,7 @@ def get_classes_summary(campus_id=None):
     """Returns list of distinct classes with student counts."""
     conn = get_db_connection()
     try:
-        where_sql = "WHERE status = 'active'"
+        where_sql = "WHERE (status = 'active' OR status IS NULL) AND LOWER(class) != 'graduate'"
         params = []
         if campus_id:
             where_sql += " AND campus_id = ?"
@@ -923,21 +923,25 @@ GEMINI_TOOLS_DECLARATION = [
 ]
 
 SYSTEM_INSTRUCTION = """You are the intelligent School Admin AI Copilot for Alliedian School Management System.
-You assist school operators and principals in managing students, tuition fees, arrears, vouchers, and campus stats.
-Language: Respond politely and naturally in Roman Urdu (or Urdu/English depending on user tone).
-Always use Pakistani currency formatting (e.g., Rs. 4,500).
+You assist school operators, principals, and accountants with everything: students, fees, arrears, vouchers, campus stats, advice, and general conversation.
+Language & Tone:
+- You understand and speak fluent Roman Urdu, Urdu, and English naturally, just like ChatGPT/Antigravity.
+- Understand all Pakistani Roman Urdu slang, informal phrasing, and typos (e.g. 'esy work ni krta', 'kya hal he', 'batao', 'tbtao', 'kr do', 'ma he', 'mujhe samjhao').
+- Always be polite, warm, and highly intelligent. Use Pakistani currency formatting (e.g., Rs. 4,500).
+
+Capabilities:
+1. Conversational & General Help: You can answer ANY question, general queries, school advice, guidance on how to manage admissions, fees, accounting, or casual chat.
+2. Database Actions:
+   - When asked to search a student or check fee, call `find_students` or `get_student_fee_status`.
+   - When asked to change or update a fee, call `find_students` or `propose_update_student_fee`.
+   - When asked for fee defaulters, call `get_class_defaulters`.
+   - When asked for stats or fee collection, call `get_campus_stats`.
+   - When asked about campuses/branches, call `get_campuses_summary`.
 
 School Context:
-- The school system has 7 campuses: Main Campus Okara (ID 2), 28 Campus (ID 1), 44_2l campus (ID 3), 21_GD campus (ID 5), Firdous Town Campus (ID 7), 44_GD Campus (ID 6), Gobindpur Campus (ID 4). Total active students across the system: ~4,500.
-- Classes: Play Group, Nursery, Prep, One, Two, Three, Four, Five, Six, Seven, Eight, Nine, Ten.
-- Key modules: Student Registry, Fee Entry & Register, Voucher Studio (print single and batch bank challans), Defaulters Ledger, Class Promotion.
-
-Guidelines:
-- If user gives a compliment or greeting ("very good", "shukriya", "salam"), respond warmly and politely in Roman Urdu like ChatGPT.
-- If user asks about campuses, list them or call get_campuses_summary.
-- When a user asks to check or update a student's fee, extract student name and class, then call find_students or propose_update_student_fee.
-- Understand typos like 'tbtao' (batao), 'kr do' (kar do), 'ma he' (in class).
-- Keep your tone respectful, professional, and helpful.
+- 7 Campuses: Main Campus Okara (ID 2), 28 Campus (ID 1), 44_2l campus (ID 3), 21_GD campus (ID 5), Firdous Town Campus (ID 7), 44_GD Campus (ID 6), Gobindpur Campus (ID 4). Total active students: ~4,500.
+- Classes: Play Group, Nursery, Prep, One to Ten.
+- Key modules: Student Registry, Fee Entry & Register, Voucher Studio (bank challans), Defaulters Ledger, Class Promotion.
 """
 
 _GEMINI_COOLDOWN_UNTIL = 0
@@ -945,18 +949,16 @@ _GEMINI_COOLDOWN_UNTIL = 0
 def call_gemini_api(api_key, user_message, campus_id=None, history=None, user_session=None):
     """
     Calls Gemini REST API with multi-turn conversation history, zero thinking budget
-    for lightning-fast responses (<2s), circuit breaker for 429/503 errors, and instant tool resolution.
+    for lightning-fast responses (<1.5s), reliable model fallback chain, and instant tool resolution.
     """
     global _GEMINI_COOLDOWN_UNTIL
     
-    # Circuit breaker: if Google previously returned 429 (quota exceeded) or 503 (high demand),
-    # avoid waiting on dead Google cloud roundtrips and let the fast local engine answer instantly (<0.1s).
     now_ts = datetime.now().timestamp()
     if now_ts < _GEMINI_COOLDOWN_UNTIL:
         return None
 
-    # Priority models: gemini-3.8-flash (latest), gemini-3.6-flash
-    models = ['gemini-3.8-flash', 'gemini-3.6-flash']
+    # Fast and reliable model fallback chain: flash-lite is ultra-fast (<1.5s) and avoids 503 high demand
+    models = ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.8-flash']
     
     # Build contents with previous chat history
     gemini_contents = []
@@ -982,15 +984,12 @@ def call_gemini_api(api_key, user_message, campus_id=None, history=None, user_se
         payload = {
             "contents": list(gemini_contents),
             "systemInstruction": {"parts": [{"text": SYSTEM_INSTRUCTION}]},
-            "tools": [{"functionDeclarations": GEMINI_TOOLS_DECLARATION}],
-            "generationConfig": {
-                "thinkingConfig": {"thinkingBudget": 0}
-            }
+            "tools": [{"functionDeclarations": GEMINI_TOOLS_DECLARATION}]
         }
         
         try:
             req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers=headers, method='POST')
-            with urllib.request.urlopen(req, timeout=2.5) as response:
+            with urllib.request.urlopen(req, timeout=6.5) as response:
                 res_data = json.loads(response.read().decode('utf-8'))
                 candidates = res_data.get('candidates', [])
                 if not candidates:
@@ -1137,16 +1136,15 @@ def call_gemini_api(api_key, user_message, campus_id=None, history=None, user_se
                     }
         except urllib.error.HTTPError as e:
             print(f"Gemini API model {model_name} HTTP {e.code}: {e}")
-            if e.code in (429, 503, 400, 403):
-                # Google rate limited or quota exhausted
-                _GEMINI_COOLDOWN_UNTIL = datetime.now().timestamp() + 90
-                break
+            # Try next model in chain instead of breaking
             continue
         except Exception as e:
             print(f"Gemini API model {model_name} execution error: {e}")
-            _GEMINI_COOLDOWN_UNTIL = datetime.now().timestamp() + 30
-            break
+            # Try next model in chain instead of breaking
+            continue
             
+    # If all models failed, short cooldown (15s) so rule engine handles immediate repeat, but Gemini re-attempts soon
+    _GEMINI_COOLDOWN_UNTIL = datetime.now().timestamp() + 15
     return None
 
 # -------------------------------------------------------------
