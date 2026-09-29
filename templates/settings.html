@@ -45,7 +45,21 @@
                         <div class="form-text text-secondary small">Surcharge amount added to total payable amount if paid after the due date.</div>
                     </div>
                     
-                    <div class="col-12 mt-5">
+                    <!-- AI Copilot Integration -->
+                    <div class="col-12 mt-4">
+                        <h5 class="mb-3 text-secondary text-uppercase small border-bottom border-light-subtle pb-2">
+                            <i class="fa-solid fa-wand-magic-sparkles text-info me-2"></i>AI Copilot & Google Gemini Configuration
+                        </h5>
+                        <p class="text-secondary small mb-3">Enable Google Gemini LLM for freeform conversational voice & chat commands. If left blank, the Copilot runs seamlessly on the built-in Smart Rule Engine.</p>
+                        <label for="gemini_api_key" class="form-label">Google Gemini API Key</label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-transparent border-end-0 border-light-subtle text-secondary" style="border: 1px solid var(--glass-border);"><i class="fa-solid fa-key"></i></span>
+                            <input type="password" class="form-control border-start-0" id="gemini_api_key" name="gemini_api_key" value="{{ settings.get('gemini_api_key', '') }}" placeholder="AIzaSy...">
+                        </div>
+                        <div class="form-text text-secondary small">Get a free API key at <a href="https://aistudio.google.com/app/apikey" target="_blank" class="text-info">Google AI Studio</a>.</div>
+                    </div>
+                    
+                    <div class="col-12 mt-4">
                         <h5 class="mb-3 text-secondary text-uppercase small border-bottom border-light-subtle pb-2">
                             Change Password for {% if active_campus_id %}Operator Account (<strong class="text-white">{{ session.username }}</strong>){% else %}<strong class="text-white">Admin Account (admin)</strong>{% endif %}
                         </h5>

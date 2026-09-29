@@ -4091,6 +4091,7 @@ def settings_view():
         bank_name = request.form['bank_name'].strip()
         due_day = request.form['due_day'].strip()
         late_fee = request.form['late_fee'].strip()
+        gemini_api_key = request.form.get('gemini_api_key', '').strip()
         new_password = request.form['new_password'].strip()
         
         # Save settings for specific campus if active, otherwise globally
@@ -4104,6 +4105,10 @@ def settings_view():
             conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('bank_name', ?)", (bank_name,))
             conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('due_day', ?)", (due_day,))
             conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('late_fee', ?)", (late_fee,))
+
+        # Save Gemini API key globally
+        if gemini_api_key:
+            conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('gemini_api_key', ?)", (gemini_api_key,))
             
         if new_password:
             hashed_pw = generate_password_hash(new_password)
@@ -4413,6 +4418,65 @@ def sos_delete(material_id):
     conn.close()
     return redirect(url_for('sos_view'))
 
+# =============================================================
+# AI COPILOT / AGENT API ENDPOINTS
+# =============================================================
+
+@app.route('/api/ai-agent/chat', methods=['POST'])
+@login_required
+def ai_agent_chat():
+    try:
+        data = request.get_json(force=True) or {}
+        message = data.get('message', '').strip()
+        confirmed_action = data.get('action')
+        history = data.get('history', [])
+        
+        from ai_agent import process_agent_request
+        response_data = process_agent_request(
+            message=message,
+            user_session=session,
+            active_campus_id=get_active_campus_id(),
+            confirmed_action=confirmed_action,
+            history=history
+        )
+        return jsonify({
+            'status': 'success',
+            'data': response_data
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@app.route('/api/ai-agent/status', methods=['GET'])
+@login_required
+def ai_agent_status():
+    from ai_agent import get_gemini_api_key
+    has_key = bool(get_gemini_api_key())
+    return jsonify({
+        'status': 'success',
+        'has_gemini_key': has_key,
+        'mode': 'Gemini 3.8 Flash' if has_key else 'Smart Rule Engine'
+    })
+
+@app.route('/api/ai-agent/save-key', methods=['POST'])
+@login_required
+def ai_agent_save_key():
+    data = request.get_json(force=True) or {}
+    api_key = data.get('api_key', '').strip()
+    if not api_key:
+        return jsonify({'status': 'error', 'message': 'API Key cannot be empty.'}), 400
+        
+    from ai_agent import set_gemini_api_key
+    success = set_gemini_api_key(api_key)
+    if success:
+        return jsonify({'status': 'success', 'message': 'Gemini API Key configured successfully!'})
+    return jsonify({'status': 'error', 'message': 'Failed to save API Key.'}), 500
+
 if __name__ == '__main__':
     init_db()
     app.run(host='0.0.0.0', port=3013, debug=True)
+

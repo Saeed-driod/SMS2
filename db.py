@@ -154,9 +154,25 @@ class PgCursorWrapper:
             yield r
 
 
+_PG_POOL = None
+
+def get_pg_pool():
+    global _PG_POOL
+    if _PG_POOL is None:
+        db_url = get_database_url()
+        if db_url:
+            from psycopg2.pool import ThreadedConnectionPool
+            try:
+                _PG_POOL = ThreadedConnectionPool(minconn=1, maxconn=10, dsn=db_url)
+            except Exception as e:
+                print(f"PostgreSQL pool init error: {e}")
+                _PG_POOL = None
+    return _PG_POOL
+
 class PgConnectionWrapper:
-    def __init__(self, real_conn):
+    def __init__(self, real_conn, pool=None):
         self._conn = real_conn
+        self._pool = pool
 
     def cursor(self):
         return PgCursorWrapper(self._conn.cursor())
@@ -173,13 +189,31 @@ class PgConnectionWrapper:
         self._conn.rollback()
 
     def close(self):
-        self._conn.close()
+        if self._pool:
+            try:
+                self._pool.putconn(self._conn)
+            except Exception:
+                pass
+        else:
+            try:
+                self._conn.close()
+            except Exception:
+                pass
 
 
 def get_db_connection():
     """Returns an active database connection (PostgreSQL if DATABASE_URL is set, otherwise SQLite)."""
     db_url = get_database_url()
     if db_url:
+        pool = get_pg_pool()
+        if pool:
+            try:
+                raw_conn = pool.getconn()
+                # Test connection is alive
+                raw_conn.isolation_level
+                return PgConnectionWrapper(raw_conn, pool=pool)
+            except Exception:
+                pass
         import psycopg2
         conn = psycopg2.connect(db_url)
         return PgConnectionWrapper(conn)

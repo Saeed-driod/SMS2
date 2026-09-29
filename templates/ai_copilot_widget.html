@@ -1,0 +1,946 @@
+<!-- AI Copilot Floating Assistant Widget -->
+<div id="aiCopilotContainer" class="ai-copilot-container no-print">
+    <!-- Floating Trigger Button -->
+    <button id="aiCopilotTrigger" class="ai-trigger-btn" type="button" title="Open AI Assistant (Ctrl + K)">
+        <div class="ai-trigger-pulse"></div>
+        <div class="ai-trigger-icon">
+            <i class="fa-solid fa-wand-magic-sparkles"></i>
+        </div>
+        <span class="ai-trigger-text">AI Copilot</span>
+        <span class="ai-status-indicator" id="aiStatusIndicator" title="System Ready"></span>
+    </button>
+
+    <!-- AI Copilot Chat Drawer / Window -->
+    <div id="aiCopilotDrawer" class="ai-copilot-drawer shadow-2xl" style="display: none;">
+        <!-- Header -->
+        <div class="ai-drawer-header">
+            <div class="d-flex align-items-center gap-2">
+                <div class="ai-avatar-icon">
+                    <i class="fa-solid fa-robot"></i>
+                </div>
+                <div>
+                    <div class="ai-drawer-title">
+                        School AI Copilot
+                        <span class="badge ai-mode-badge bg-success" id="aiModeBadge">Gemini 3.8 Flash</span>
+                    </div>
+                    <div class="ai-drawer-subtitle">Actions & Voice Automation</div>
+                </div>
+            </div>
+            <div class="d-flex align-items-center gap-1">
+                <button class="btn btn-sm btn-icon-ai text-secondary" id="aiSettingsBtn" title="Gemini API Key Settings">
+                    <i class="fa-solid fa-key"></i>
+                </button>
+                <button class="btn btn-sm btn-icon-ai text-secondary" id="aiClearChatBtn" title="Clear Conversation">
+                    <i class="fa-solid fa-trash-can"></i>
+                </button>
+                <button class="btn btn-sm btn-icon-ai text-secondary" id="aiCloseBtn" title="Close">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Banner when Gemini API Key is not set -->
+        <div id="aiKeyBanner" class="ai-key-banner p-2 px-3 border-bottom align-items-center justify-content-between d-none" style="background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.25) !important;">
+            <div class="d-flex align-items-center gap-2">
+                <i class="fa-solid fa-wand-magic-sparkles text-warning" style="font-size: 0.85rem;"></i>
+                <div style="font-size: 0.73rem;" class="text-white">
+                    <strong>Smart Chatbot:</strong> Free Gemini Key add karein taake bot ChatGPT jesa jawab dy!
+                </div>
+            </div>
+            <button class="btn btn-warning btn-xs py-1 px-2 fw-bold text-dark" id="aiOpenKeyBannerBtn" style="font-size: 0.7rem; border-radius: 20px;">
+                Key Add Karein
+            </button>
+        </div>
+
+        <!-- API Key Settings Panel (Collapsible) -->
+        <div id="aiKeySettingsPanel" class="ai-key-panel p-3 border-bottom border-light-subtle" style="display: none;">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <span class="small fw-semibold text-white"><i class="fa-solid fa-key text-warning me-1"></i> Gemini AI Setup (Free)</span>
+                <button type="button" class="btn-close btn-close-white small" id="aiCloseSettingsBtn" style="font-size: 0.65rem;"></button>
+            </div>
+            <p class="text-secondary small mb-2" style="font-size: 0.75rem;">
+                Free Google Gemini API Key add karein. Is se Copilot bilkul insano ki tarah Roman Urdu, Urdu aur English samajhta hai aur school ke actions perform karta hai.
+            </p>
+            <div class="input-group input-group-sm mb-2">
+                <input type="password" id="aiGeminiKeyInput" class="form-control bg-dark border-secondary text-white" placeholder="Paste AIzaSy... key here">
+                <button class="btn btn-primary btn-sm px-3" id="aiSaveKeyBtn">Save Key</button>
+            </div>
+            <div class="d-flex justify-content-between align-items-center">
+                <a href="https://aistudio.google.com/app/apikey" target="_blank" class="small text-info text-decoration-none" style="font-size: 0.72rem;">
+                    <i class="fa-solid fa-arrow-up-right-from-square me-1"></i> Get Free Gemini Key (Google AI Studio)
+                </a>
+                <div id="aiKeyStatusMsg" class="small" style="font-size: 0.72rem;"></div>
+            </div>
+        </div>
+
+        <!-- Chat Messages Container -->
+        <div class="ai-messages-container" id="aiMessagesContainer">
+            <!-- Welcome Message -->
+            <div class="ai-msg ai-msg-bot">
+                <div class="ai-msg-avatar"><i class="fa-solid fa-robot"></i></div>
+                <div class="ai-msg-bubble">
+                    <p class="mb-2">Assalam-o-Alaikum! Main aapka <strong>School AI Chatbot & Copilot</strong> hoon. 🤖✨</p>
+                    <p class="mb-2 small text-secondary">Aap mujh se aam bol-chal me baat bhi kar sakte hain aur school ke actions bhi karwa sakte hain:</p>
+                    
+                    <div class="ai-suggestion-chips">
+                        <button class="ai-chip" data-query="Ali Raza (Class 2) ki fee kitni hai?">
+                            <i class="fa-solid fa-magnifying-glass text-info"></i> Ali Raza (Class 2) fee status
+                        </button>
+                        <button class="ai-chip" data-query="Class 2 ke Ali Raza ki fee 2500 kar do">
+                            <i class="fa-solid fa-pen-to-square text-warning"></i> Ali Raza ki fee 2,500 kar do
+                        </button>
+                        <button class="ai-chip" data-query="Class 2 ke defaulters dikhao">
+                            <i class="fa-solid fa-user-xmark text-danger"></i> Class 2 defaulters
+                        </button>
+                        <button class="ai-chip" data-query="Campus me total kitne bache hain?">
+                            <i class="fa-solid fa-chart-pie text-success"></i> Campus Overview
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Input Area -->
+        <div class="ai-input-area">
+            <!-- Voice Listening Banner -->
+            <div id="aiVoiceListeningIndicator" class="ai-voice-indicator" style="display: none;">
+                <span class="pulse-indicator bg-danger"></span>
+                <span class="small text-danger fw-semibold" id="aiVoiceStatusText">Sun raha hoon... (Bolyein)</span>
+            </div>
+
+            <form id="aiChatForm" class="d-flex align-items-center gap-2">
+                <div class="position-relative">
+                    <button type="button" id="aiVoiceBtn" class="btn btn-icon-voice" title="Voice Input (Mic)">
+                        <i class="fa-solid fa-microphone"></i>
+                    </button>
+                    <span id="aiVoiceLangBadge" class="badge bg-secondary position-absolute top-0 start-100 translate-middle" style="font-size: 0.55rem; cursor: pointer;" title="Click to toggle Urdu/English">UR</span>
+                </div>
+                <div class="position-relative flex-grow-1">
+                    <input type="text" id="aiChatInput" class="form-control ai-input-field" 
+                           placeholder="Type command or chat (e.g. Ali Raza ki fee 2500 kardo)..." autocomplete="off" required>
+                </div>
+                <button type="submit" id="aiSendBtn" class="btn btn-primary btn-ai-send" title="Send (Enter)">
+                    <i class="fa-solid fa-paper-plane"></i>
+                </button>
+            </form>
+            <div class="d-flex justify-content-between align-items-center mt-2 px-1">
+                <span class="text-muted" style="font-size: 0.68rem;">Shortcuts: <kbd>Ctrl+K</kbd> to open &bull; Safe confirmation before saving</span>
+                <span class="text-muted" style="font-size: 0.68rem;" id="aiEngineLabel">Engine: Gemini 3.8 Flash</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- AI Copilot Styles -->
+<style>
+.ai-copilot-container {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 1060;
+    font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
+}
+
+/* Trigger Button */
+.ai-trigger-btn {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 50%, #8b5cf6 100%);
+    color: #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    padding: 10px 18px;
+    border-radius: 50px;
+    box-shadow: 0 8px 24px rgba(37, 99, 235, 0.4), 0 0 15px rgba(139, 92, 246, 0.3);
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+}
+
+.ai-trigger-btn:hover {
+    transform: translateY(-3px) scale(1.03);
+    box-shadow: 0 12px 32px rgba(37, 99, 235, 0.55), 0 0 25px rgba(139, 92, 246, 0.5);
+}
+
+.ai-trigger-icon {
+    font-size: 1.1rem;
+    animation: aiSparkleRotate 4s linear infinite;
+}
+
+@keyframes aiSparkleRotate {
+    0% { transform: rotate(0deg) scale(1); }
+    50% { transform: rotate(15deg) scale(1.15); }
+    100% { transform: rotate(0deg) scale(1); }
+}
+
+.ai-trigger-text {
+    font-weight: 700;
+    font-size: 0.88rem;
+    letter-spacing: 0.3px;
+}
+
+.ai-status-indicator {
+    width: 8px;
+    height: 8px;
+    background: #10b981;
+    border-radius: 50%;
+    box-shadow: 0 0 8px #10b981;
+}
+
+/* Drawer / Chat Window */
+.ai-copilot-drawer {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    width: 440px;
+    max-width: calc(100vw - 32px);
+    height: 640px;
+    max-height: calc(100vh - 48px);
+    background: rgba(10, 15, 30, 0.95);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(59, 130, 246, 0.25);
+    border-radius: 20px;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.65), 0 0 35px rgba(37, 99, 235, 0.2);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: aiDrawerPop 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    z-index: 1061;
+}
+
+@keyframes aiDrawerPop {
+    from { opacity: 0; transform: translateY(20px) scale(0.96); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Header */
+.ai-drawer-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 18px;
+    background: rgba(15, 23, 42, 0.8);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ai-avatar-icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #2563eb, #8b5cf6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 1.1rem;
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
+}
+
+.ai-drawer-title {
+    font-weight: 750;
+    font-size: 0.92rem;
+    color: #f8fafc;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ai-mode-badge {
+    background: rgba(56, 189, 248, 0.15);
+    color: #38bdf8;
+    border: 1px solid rgba(56, 189, 248, 0.3);
+    font-size: 0.65rem;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 50px;
+}
+
+.ai-drawer-subtitle {
+    font-size: 0.72rem;
+    color: #94a3b8;
+}
+
+.btn-icon-ai {
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.btn-icon-ai:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+
+/* Key settings panel */
+.ai-key-panel {
+    background: rgba(15, 23, 42, 0.9);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Messages container */
+.ai-messages-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    scroll-behavior: smooth;
+}
+
+.ai-messages-container::-webkit-scrollbar {
+    width: 5px;
+}
+.ai-messages-container::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 10px;
+}
+
+/* Message Bubbles */
+.ai-msg {
+    display: flex;
+    gap: 10px;
+    max-width: 90%;
+}
+
+.ai-msg-bot {
+    align-self: flex-start;
+}
+
+.ai-msg-user {
+    align-self: flex-end;
+    flex-direction: row-reverse;
+}
+
+.ai-msg-avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    color: white;
+    flex-shrink: 0;
+    margin-top: 3px;
+}
+
+.ai-msg-user .ai-msg-avatar {
+    background: #475569;
+}
+
+.ai-msg-bubble {
+    background: rgba(30, 41, 59, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: #e2e8f0;
+    padding: 12px 14px;
+    border-radius: 16px;
+    border-top-left-radius: 4px;
+    font-size: 0.84rem;
+    line-height: 1.5;
+    word-break: break-word;
+}
+
+.ai-msg-user .ai-msg-bubble {
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #ffffff;
+    border-top-left-radius: 16px;
+    border-top-right-radius: 4px;
+}
+
+/* Suggestion Chips */
+.ai-suggestion-chips {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 10px;
+}
+
+.ai-chip {
+    background: rgba(15, 23, 42, 0.7);
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    color: #cbd5e1;
+    padding: 7px 12px;
+    border-radius: 8px;
+    text-align: left;
+    font-size: 0.78rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.ai-chip:hover {
+    background: rgba(37, 99, 235, 0.2);
+    border-color: rgba(59, 130, 246, 0.5);
+    color: #fff;
+    transform: translateX(3px);
+}
+
+/* Interactive Action Card */
+.ai-action-card {
+    background: rgba(15, 23, 42, 0.95);
+    border: 1px solid #3b82f6;
+    border-radius: 12px;
+    padding: 12px 14px;
+    margin-top: 10px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+}
+
+.ai-action-badge {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    font-weight: 750;
+    letter-spacing: 0.5px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: rgba(245, 158, 11, 0.2);
+    color: #f59e0b;
+    border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.ai-change-pill {
+    background: rgba(255, 255, 255, 0.05);
+    padding: 8px 12px;
+    border-radius: 8px;
+    margin: 8px 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border: 1px dashed rgba(255, 255, 255, 0.15);
+}
+
+/* Input Area */
+.ai-input-area {
+    padding: 14px;
+    background: rgba(15, 23, 42, 0.9);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ai-input-field {
+    background: rgba(30, 41, 59, 0.85) !important;
+    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+    color: #fff !important;
+    border-radius: 25px !important;
+    padding: 9px 16px !important;
+    font-size: 0.82rem !important;
+    transition: all 0.2s;
+}
+
+.ai-input-field:focus {
+    border-color: #3b82f6 !important;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25) !important;
+}
+
+.btn-ai-send {
+    border-radius: 50% !important;
+    width: 38px;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    flex-shrink: 0;
+}
+
+.btn-icon-voice {
+    background: rgba(30, 41, 59, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #94a3b8;
+    border-radius: 50%;
+    width: 38px;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: all 0.2s;
+}
+
+.btn-icon-voice:hover {
+    color: #fff;
+    background: rgba(59, 130, 246, 0.25);
+    border-color: #3b82f6;
+}
+
+.btn-icon-voice.recording {
+    background: #ef4444;
+    color: #fff;
+    border-color: #ef4444;
+    animation: voicePulse 1.2s infinite;
+}
+
+@keyframes voicePulse {
+    0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6); }
+    70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+
+.ai-voice-indicator {
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 8px;
+    padding: 4px 10px;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Typing animation */
+.ai-typing-dots {
+    display: inline-flex;
+    gap: 4px;
+    align-items: center;
+    padding: 4px 0;
+}
+.ai-typing-dots span {
+    width: 6px;
+    height: 6px;
+    background: #94a3b8;
+    border-radius: 50%;
+    animation: aiDotBounce 1.4s infinite ease-in-out both;
+}
+.ai-typing-dots span:nth-child(1) { animation-delay: -0.32s; }
+.ai-typing-dots span:nth-child(2) { animation-delay: -0.16s; }
+
+@keyframes aiDotBounce {
+    0%, 80%, 100% { transform: scale(0); }
+    40% { transform: scale(1); }
+}
+</style>
+
+<!-- AI Copilot Interactivity Script -->
+<script>
+(function() {
+    const triggerBtn = document.getElementById('aiCopilotTrigger');
+    const drawer = document.getElementById('aiCopilotDrawer');
+    const closeBtn = document.getElementById('aiCloseBtn');
+    const clearChatBtn = document.getElementById('aiClearChatBtn');
+    const settingsBtn = document.getElementById('aiSettingsBtn');
+    const closeSettingsBtn = document.getElementById('aiCloseSettingsBtn');
+    const settingsPanel = document.getElementById('aiKeySettingsPanel');
+    const saveKeyBtn = document.getElementById('aiSaveKeyBtn');
+    const geminiKeyInput = document.getElementById('aiGeminiKeyInput');
+    const keyStatusMsg = document.getElementById('aiKeyStatusMsg');
+    const chatForm = document.getElementById('aiChatForm');
+    const chatInput = document.getElementById('aiChatInput');
+    const messagesContainer = document.getElementById('aiMessagesContainer');
+    const voiceBtn = document.getElementById('aiVoiceBtn');
+    const voiceIndicator = document.getElementById('aiVoiceListeningIndicator');
+    const voiceStatusText = document.getElementById('aiVoiceStatusText');
+    const voiceLangBadge = document.getElementById('aiVoiceLangBadge');
+    const modeBadge = document.getElementById('aiModeBadge');
+    const engineLabel = document.getElementById('aiEngineLabel');
+    const statusIndicator = document.getElementById('aiStatusIndicator');
+    const keyBanner = document.getElementById('aiKeyBanner');
+    const openKeyBannerBtn = document.getElementById('aiOpenKeyBannerBtn');
+
+    let recognition = null;
+    let isRecording = false;
+    let currentVoiceLang = 'ur-PK';
+    let chatHistory = []; // Multi-turn chat memory
+    let voiceSendTimer = null;
+
+    // Check System Status on Load
+    function checkAiStatus() {
+        fetch('/api/ai-agent/status')
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    modeBadge.textContent = data.mode;
+                    engineLabel.textContent = 'Engine: ' + data.mode;
+                    if (data.has_gemini_key) {
+                        modeBadge.classList.remove('bg-warning');
+                        modeBadge.classList.add('bg-success');
+                        statusIndicator.style.background = '#10b981';
+                        if (keyBanner) {
+                            keyBanner.classList.add('d-none');
+                            keyBanner.classList.remove('d-flex');
+                        }
+                    } else {
+                        statusIndicator.style.background = '#38bdf8';
+                        if (keyBanner) {
+                            keyBanner.classList.remove('d-none');
+                            keyBanner.classList.add('d-flex');
+                        }
+                    }
+                }
+            })
+            .catch(() => {
+                engineLabel.textContent = 'Engine: Smart Rule Engine';
+            });
+    }
+    checkAiStatus();
+
+    // Toggle Drawer Open/Close
+    function toggleDrawer(open) {
+        const isShown = drawer.style.display !== 'none';
+        const willShow = open !== undefined ? open : !isShown;
+        if (willShow) {
+            drawer.style.display = 'flex';
+            triggerBtn.style.display = 'none';
+            chatInput.focus();
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        } else {
+            drawer.style.display = 'none';
+            triggerBtn.style.display = 'flex';
+        }
+    }
+
+    triggerBtn.addEventListener('click', () => toggleDrawer(true));
+    closeBtn.addEventListener('click', () => toggleDrawer(false));
+
+    // Keyboard Shortcut Ctrl+K or Cmd+K
+    document.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+            e.preventDefault();
+            toggleDrawer();
+        }
+    });
+
+    // Clear Chat
+    clearChatBtn.addEventListener('click', () => {
+        chatHistory = [];
+        messagesContainer.innerHTML = `
+            <div class="ai-msg ai-msg-bot">
+                <div class="ai-msg-avatar"><i class="fa-solid fa-robot"></i></div>
+                <div class="ai-msg-bubble">
+                    <p class="mb-2">Conversation reset. Main aapka AI Chatbot hoon. Aap mujh se baat kar sakte hain ya koi bhi command de sakte hain! 😊</p>
+                    <div class="ai-suggestion-chips">
+                        <button class="ai-chip" data-query="Ali Raza (Class 2) ki fee kitni hai?"><i class="fa-solid fa-magnifying-glass text-info"></i> Ali Raza fee status</button>
+                        <button class="ai-chip" data-query="Class 2 ke Ali Raza ki fee 2500 kar do"><i class="fa-solid fa-pen-to-square text-warning"></i> Ali Raza ki fee 2,500 kar do</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        bindChipEvents();
+    });
+
+    // Toggle Key Settings
+    settingsBtn.addEventListener('click', () => {
+        settingsPanel.style.display = settingsPanel.style.display === 'none' ? 'block' : 'none';
+        if (settingsPanel.style.display === 'block') {
+            geminiKeyInput.focus();
+        }
+    });
+    if (openKeyBannerBtn) {
+        openKeyBannerBtn.addEventListener('click', () => {
+            settingsPanel.style.display = 'block';
+            geminiKeyInput.focus();
+        });
+    }
+    closeSettingsBtn.addEventListener('click', () => {
+        settingsPanel.style.display = 'none';
+    });
+
+    // Save Key
+    saveKeyBtn.addEventListener('click', () => {
+        const key = geminiKeyInput.value.trim();
+        if (!key) {
+            keyStatusMsg.innerHTML = '<span class="text-danger">Key cannot be empty!</span>';
+            return;
+        }
+        saveKeyBtn.disabled = true;
+        saveKeyBtn.textContent = 'Saving...';
+        fetch('/api/ai-agent/save-key', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ api_key: key })
+        })
+        .then(r => r.json())
+        .then(data => {
+            saveKeyBtn.disabled = false;
+            saveKeyBtn.textContent = 'Save Key';
+            if (data.status === 'success') {
+                keyStatusMsg.innerHTML = '<span class="text-success fw-bold">✔ Key saved! Gemini AI active.</span>';
+                geminiKeyInput.value = '';
+                checkAiStatus();
+                setTimeout(() => { settingsPanel.style.display = 'none'; keyStatusMsg.innerHTML = ''; }, 2000);
+            } else {
+                keyStatusMsg.innerHTML = `<span class="text-danger">❌ ${data.message}</span>`;
+            }
+        })
+        .catch(err => {
+            saveKeyBtn.disabled = false;
+            saveKeyBtn.textContent = 'Save Key';
+            keyStatusMsg.innerHTML = '<span class="text-danger">❌ Connection error</span>';
+        });
+    });
+
+    // Format Markdown Text Helper
+    function formatMarkdown(text) {
+        if (!text) return '';
+        let html = text
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*(.*?)\*/g, '<em>$1</em>')
+            .replace(/`([^`]+)`/g, '<code class="bg-dark px-1 rounded text-info">$1</code>')
+            .replace(/\n\n/g, '<br><br>')
+            .replace(/\n/g, '<br>');
+        return html;
+    }
+
+    // Append Message to UI
+    function appendMessage(sender, htmlContent, actionProposal = null) {
+        const msgDiv = document.createElement('div');
+        msgDiv.className = `ai-msg ai-msg-${sender}`;
+
+        const avatar = document.createElement('div');
+        avatar.className = 'ai-msg-avatar';
+        avatar.innerHTML = sender === 'user' ? '<i class="fa-solid fa-user"></i>' : '<i class="fa-solid fa-robot"></i>';
+
+        const bubble = document.createElement('div');
+        bubble.className = 'ai-msg-bubble';
+        bubble.innerHTML = htmlContent;
+
+        // Render Action Confirmation Card if proposed
+        if (actionProposal) {
+            const actionCard = document.createElement('div');
+            actionCard.className = 'ai-action-card';
+            actionCard.innerHTML = `
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="ai-action-badge"><i class="fa-solid fa-shield-halved me-1"></i> Action Confirmation</span>
+                    <span class="text-white small fw-bold">Roll No: ${actionProposal.student_id}</span>
+                </div>
+                <div class="small text-white fw-bold mb-1">${actionProposal.student_name} <span class="text-secondary fw-normal">(${actionProposal.student_class})</span></div>
+                <div class="ai-change-pill">
+                    <span class="text-secondary small">Monthly Fee:</span>
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="text-decoration-line-through text-danger small">Rs. ${Number(actionProposal.old_fee).toLocaleString()}</span>
+                        <i class="fa-solid fa-arrow-right text-secondary small"></i>
+                        <span class="text-success fw-bold">Rs. ${Number(actionProposal.new_fee).toLocaleString()}</span>
+                    </div>
+                </div>
+                <div class="d-flex gap-2 mt-2">
+                    <button class="btn btn-success btn-sm w-100 fw-bold btn-confirm-action" style="font-size: 0.78rem;">
+                        <i class="fa-solid fa-check me-1"></i> Confirm & Save
+                    </button>
+                    <button class="btn btn-outline-secondary btn-sm btn-cancel-action" style="font-size: 0.78rem;">
+                        Cancel
+                    </button>
+                </div>
+            `;
+
+            // Confirm Button Click Event
+            const confirmBtn = actionCard.querySelector('.btn-confirm-action');
+            const cancelBtn = actionCard.querySelector('.btn-cancel-action');
+
+            confirmBtn.addEventListener('click', () => {
+                confirmBtn.disabled = true;
+                confirmBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i> Applying...';
+                cancelBtn.style.display = 'none';
+
+                fetch('/api/ai-agent/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        action: actionProposal,
+                        history: chatHistory.slice(-8)
+                    })
+                })
+                .then(r => r.json())
+                .then(res => {
+                    actionCard.remove();
+                    if (res.status === 'success' && res.data) {
+                        chatHistory.push({ role: 'assistant', content: res.data.text });
+                        appendMessage('bot', formatMarkdown(res.data.text));
+                    } else {
+                        appendMessage('bot', '❌ Action execute nahi ho saka.');
+                    }
+                })
+                .catch(() => {
+                    confirmBtn.disabled = false;
+                    confirmBtn.innerHTML = 'Retry';
+                });
+            });
+
+            cancelBtn.addEventListener('click', () => {
+                actionCard.innerHTML = '<div class="small text-muted fst-italic"><i class="fa-solid fa-ban me-1"></i> Action cancelled by user.</div>';
+            });
+
+            bubble.appendChild(actionCard);
+        }
+
+        msgDiv.appendChild(avatar);
+        msgDiv.appendChild(bubble);
+        messagesContainer.appendChild(msgDiv);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+        bindChipEvents();
+    }
+
+    // Send Message
+    function sendMessage(text) {
+        if (!text || !text.trim()) return;
+        const userQuery = text.trim();
+        appendMessage('user', userQuery);
+
+        // Show typing indicator
+        const typingDiv = document.createElement('div');
+        typingDiv.className = 'ai-msg ai-msg-bot';
+        typingDiv.id = 'aiTypingIndicator';
+        typingDiv.innerHTML = `
+            <div class="ai-msg-avatar"><i class="fa-solid fa-robot"></i></div>
+            <div class="ai-msg-bubble">
+                <div class="ai-typing-dots">
+                    <span></span><span></span><span></span>
+                </div>
+            </div>
+        `;
+        messagesContainer.appendChild(typingDiv);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+        // API Call with Conversation History
+        fetch('/api/ai-agent/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                message: userQuery,
+                history: chatHistory.slice(-8)
+            })
+        })
+        .then(r => r.json())
+        .then(res => {
+            const indicator = document.getElementById('aiTypingIndicator');
+            if (indicator) indicator.remove();
+
+            if (res.status === 'success' && res.data) {
+                // Update history
+                chatHistory.push({ role: 'user', content: userQuery });
+                if (res.data.text) {
+                    chatHistory.push({ role: 'assistant', content: res.data.text });
+                }
+
+                const formatted = formatMarkdown(res.data.text);
+                appendMessage('bot', formatted, res.data.action_proposal);
+            } else {
+                appendMessage('bot', `⚠️ Maazrat, koi masla pesh aya: ${res.message || 'Error'}`);
+            }
+        })
+        .catch(err => {
+            const indicator = document.getElementById('aiTypingIndicator');
+            if (indicator) indicator.remove();
+            appendMessage('bot', '⚠️ Connection error. Server se rabta nahi ho saka.');
+        });
+    }
+
+    chatForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        if (voiceSendTimer) {
+            clearTimeout(voiceSendTimer);
+            voiceSendTimer = null;
+        }
+        const text = chatInput.value;
+        chatInput.value = '';
+        sendMessage(text);
+    });
+
+    // Chip Click Events
+    function bindChipEvents() {
+        document.querySelectorAll('.ai-chip').forEach(chip => {
+            chip.onclick = function() {
+                const query = this.getAttribute('data-query');
+                if (query) sendMessage(query);
+            };
+        });
+    }
+    bindChipEvents();
+
+    // Voice Language Switcher
+    if (voiceLangBadge) {
+        voiceLangBadge.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (currentVoiceLang === 'ur-PK') {
+                currentVoiceLang = 'en-US';
+                voiceLangBadge.textContent = 'EN';
+                voiceLangBadge.classList.replace('bg-secondary', 'bg-primary');
+            } else {
+                currentVoiceLang = 'ur-PK';
+                voiceLangBadge.textContent = 'UR';
+                voiceLangBadge.classList.replace('bg-primary', 'bg-secondary');
+            }
+            if (recognition) {
+                recognition.lang = currentVoiceLang;
+            }
+        });
+    }
+
+    // Voice Input via Web Speech API (English / Urdu)
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+        const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+        recognition = new SpeechRec();
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = currentVoiceLang;
+
+        recognition.onstart = () => {
+            isRecording = true;
+            voiceBtn.classList.add('recording');
+            voiceIndicator.style.display = 'flex';
+            if (voiceStatusText) {
+                voiceStatusText.textContent = currentVoiceLang === 'ur-PK' ? 'Sun raha hoon... (Urdu bolyein)' : 'Listening... (Speak now)';
+            }
+        };
+
+        recognition.onresult = (event) => {
+            const transcript = event.results[0][0].transcript;
+            chatInput.value = transcript;
+            if (voiceStatusText) {
+                voiceStatusText.textContent = `Pehchan liya: "${transcript}" (Bhej raha hoon...)`;
+            }
+            
+            // Give 1.2s buffer so user can read transcript or edit before auto-send
+            voiceSendTimer = setTimeout(() => {
+                const textToSend = chatInput.value.trim();
+                if (textToSend) {
+                    sendMessage(textToSend);
+                    chatInput.value = '';
+                }
+                voiceIndicator.style.display = 'none';
+            }, 1200);
+        };
+
+        recognition.onerror = () => {
+            isRecording = false;
+            voiceBtn.classList.remove('recording');
+            voiceIndicator.style.display = 'none';
+        };
+
+        recognition.onend = () => {
+            isRecording = false;
+            voiceBtn.classList.remove('recording');
+            setTimeout(() => {
+                if (!voiceSendTimer) voiceIndicator.style.display = 'none';
+            }, 1500);
+        };
+
+        voiceBtn.addEventListener('click', () => {
+            if (voiceSendTimer) {
+                clearTimeout(voiceSendTimer);
+                voiceSendTimer = null;
+            }
+            if (isRecording) {
+                recognition.stop();
+            } else {
+                recognition.lang = currentVoiceLang;
+                recognition.start();
+            }
+        });
+    } else {
+        voiceBtn.style.display = 'none';
+        if (voiceLangBadge) voiceLangBadge.style.display = 'none';
+    }
+})();
+</script>
