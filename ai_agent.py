@@ -137,8 +137,179 @@ def get_class_aliases(class_name):
             return aliases
     return [c]
 
+# -------------------------------------------------------------
+# URDU & PAKISTANI NAME TRANSLITERATION SYSTEM
+# -------------------------------------------------------------
+
+# Comprehensive Pakistani Names Dictionary (Urdu Script -> English)
+URDU_NAME_MAP = {
+    'علی': 'Ali', 'رضا': 'Raza', 'محمد': 'Muhammad', 'احمد': 'Ahmad', 'حسن': 'Hassan',
+    'حسین': 'Hussain', 'عثمان': 'Usman', 'حمزہ': 'Hamza', 'فاطمہ': 'Fatima', 'عائشہ': 'Ayesha',
+    'زینب': 'Zainab', 'طہ': 'Taha', 'عبداللہ': 'Abdullah', 'بلال': 'Bilal', 'عاطف': 'Atif',
+    'اسد': 'Asad', 'سعد': 'Saad', 'عمر': 'Umar', 'ابوبکر': 'Abubakar', 'طاہر': 'Tahir',
+    'طیب': 'Tayyab', 'مریم': 'Maryam', 'نور': 'Noor', 'اقرا': 'Iqra', 'اقراء': 'Iqra',
+    'سید': 'Syed', 'رانا': 'Rana', 'ملک': 'Malik', 'چوہدری': 'Chaudhry', 'خان': 'Khan',
+    'لیاقت': 'Liaqat', 'شوکت': 'Shokat', 'توصیف': 'Touseef', 'ثنااللہ': 'Sanaullah',
+    'نفیس': 'Nafees', 'عادل': 'Adil', 'محمود': 'Mehmood', 'ثاقب': 'Saqib', 'عاصم': 'Asim',
+    'حیدر': 'Haider', 'شکیل': 'Shakeel', 'انیب': 'Aneeb', 'عبیرہ': 'Abeerah', 'ہادیہ': 'Hadia',
+    'عفان': 'Affan', 'شایان': 'Shayan', 'عنایہ': 'Anaya', 'ایمان': 'Iman', 'حرا': 'Hira',
+    'ہادی': 'Hadi', 'عبد': 'Abdul', 'عبدالہادی': 'Abdul Hadi', 'عبدالرحمان': 'Abdul Rehman',
+    'عبدالرحمن': 'Abdul Rehman', 'عبدالرحمٰن': 'Abdul Rehman', 'جاوید': 'Javed', 'ندیم': 'Nadeem',
+    'افضل': 'Afzal', 'سلطان': 'Sultan', 'شریف': 'Sharif', 'شفیق': 'Shafeeq', 'طارق': 'Tariq',
+    'کاشف': 'Kashif', 'وقار': 'Waqar', 'وقاص': 'Waqas', 'فیصل': 'Faisal', 'ارسلان': 'Arslan',
+    'سلمان': 'Salman', 'نعیم': 'Naeem', 'وسیم': 'Waseem', 'ظہیر': 'Zaheer', 'منیر': 'Muneer',
+    'بشیر': 'Basheer', 'خالد': 'Khalid', 'شاہد': 'Shahid', 'ساجد': 'Sajid', 'ماجد': 'Majid',
+    'انور': 'Anwar', 'اختر': 'Akhtar', 'اصغر': 'Asghar', 'اکبر': 'Akbar', 'امجد': 'Amjad',
+    'ارشد': 'Arshad', 'اقبال': 'Iqbal', 'اعجاز': 'Ijaz', 'اشرف': 'Ashraf', 'مظہر': 'Mazhar',
+    'محسن': 'Mohsin', 'مرتضیٰ': 'Murtaza', 'مرتضی': 'Murtaza', 'مصطفیٰ': 'Mustafa', 'مصطفی': 'Mustafa',
+    'مجتبیٰ': 'Mujtaba', 'مجتبی': 'Mujtaba', 'کامران': 'Kamran', 'عرفان': 'Irfan', 'فرحان': 'Farhan',
+    'شہزاد': 'Shehzad', 'نوید': 'Naveed', 'زوہیب': 'Zohaib', 'عدیل': 'Adeel', 'ریحان': 'Rehan',
+    'صہیب': 'Suhaib', 'عمیر': 'Umair', 'زبیر': 'Zubair', 'شعیب': 'Shoaib', 'یاسر': 'Yasir',
+    'راشد': 'Rashid', 'زاہد': 'Zahid', 'پرویز': 'Parvez', 'تنویر': 'Tanveer', 'نذیر': 'Nazeer',
+    'شبیر': 'Shabbir', 'الیاس': 'Ilyas', 'مقصود': 'Maqsood', 'وارث': 'Waris', 'ایوب': 'Ayoub',
+    'حماد': 'Hammad', 'عظیم': 'Azeem', 'نسیم': 'Naseem', 'سہیل': 'Sohail', 'نعمان': 'Nouman',
+    'فاروق': 'Farooq', 'حارث': 'Haris', 'داؤد': 'Dawood', 'قاسم': 'Qasim', 'ابراہیم': 'Ibrahim',
+    'اسماعیل': 'Ismail', 'اسحاق': 'Ishaq', 'یوسف': 'Yousaf', 'یحییٰ': 'Yahya', 'یحیی': 'Yahya',
+    'موسیٰ': 'Musa', 'موسی': 'Musa', 'عیسیٰ': 'Isa', 'سلیمان': 'Sulaiman', 'یونس': 'Younas',
+    'ہارون': 'Haroon', 'سیف': 'Saif', 'ضیاء': 'Zia', 'ضیا': 'Zia', 'بابر': 'Babar', 'جہانگیر': 'Jahangir',
+    'حفصہ': 'Hafsa', 'سائرہ': 'Saira', 'سمیرا': 'Samira', 'نائلہ': 'Naila', 'شازیہ': 'Shazia',
+    'بشریٰ': 'Bushra', 'بشری': 'Bushra', 'صبا': 'Saba', 'ارم': 'Irum', 'سدرہ': 'Sidra',
+    'طاہرہ': 'Tahira', 'انعم': 'Anam', 'فروا': 'Farwa', 'حوریہ': 'Hooria', 'مہرین': 'Mehreen',
+    'مومنہ': 'Momina', 'انابیہ': 'Anabia', 'دعا': 'Dua', 'ہانیہ': 'Hania', 'علینہ': 'Aleena',
+    'فریحہ': 'Fariha', 'امنہ': 'Amna', 'آمنہ': 'Amna', 'اسماء': 'Asma', 'اسما': 'Asma',
+    'فضاء': 'Fiza', 'فضا': 'Fiza', 'کنزہ': 'Kinza', 'مروہ': 'Marwa', 'شفا': 'Shifa',
+    'عروج': 'Urooj', 'زہرا': 'Zahra', 'زہرہ': 'Zahra', 'ابیہا': 'Abiha', 'حافظ': 'Hafiz',
+    'قاری': 'Qari', 'صاحب': 'Sahib'
+}
+
+URDU_CHAR_MAP = {
+    'ا': 'a', 'آ': 'aa', 'ب': 'b', 'پ': 'p', 'ت': 't', 'ٹ': 't', 'ث': 's',
+    'ج': 'j', 'چ': 'ch', 'ح': 'h', 'خ': 'kh', 'د': 'd', 'ڈ': 'd', 'ذ': 'z',
+    'ر': 'r', 'ڑ': 'r', 'ز': 'z', 'ژ': 'z', 'س': 's', 'ش': 'sh', 'ص': 's',
+    'ض': 'z', 'ط': 't', 'ظ': 'z', 'ع': 'a', 'غ': 'gh', 'ف': 'f', 'ق': 'q',
+    'ک': 'k', 'گ': 'g', 'ل': 'l', 'م': 'm', 'ن': 'n', 'ں': 'n', 'و': 'o',
+    'ہ': 'h', 'ھ': 'h', 'ء': '', 'ی': 'i', 'ے': 'e'
+}
+
+URDU_DIGITS_MAP = {
+    '۰': '0', '۱': '1', '۲': '2', '۳': '3', '۴': '4',
+    '۵': '5', '۶': '6', '۷': '7', '۸': '8', '۹': '9'
+}
+
+URDU_WORDS_MAP = {
+    'فیس': 'fee', 'فیسیں': 'fees', 'کتنی': 'kitni', 'کتنا': 'kitna', 'بتاؤ': 'batao',
+    'بتائیں': 'batao', 'بتایں': 'batao', 'بتا': 'batao', 'دکھاؤ': 'batao', 'دیکھو': 'batao',
+    'چیک': 'check', 'کلاس': 'class', 'جماعت': 'class', 'گریڈ': 'grade',
+    'ایک': 'one', 'دو': 'two', 'تین': 'three', 'چار': 'four', 'پانچ': 'five',
+    'چھ': 'six', 'سات': 'seven', 'آٹھ': 'eight', 'نو': 'nine', 'دس': 'ten',
+    'نرسری': 'nursery', 'پریپ': 'prep', 'کر': 'kar', 'دو': 'do', 'دیں': 'do',
+    'رکھ': 'rakh', 'بدل': 'badal', 'اپڈیٹ': 'update', 'سیٹ': 'set',
+    'ڈیفالٹر': 'defaulter', 'ڈیفالٹرز': 'defaulters', 'بقایا': 'arrears', 'بقایاجات': 'arrears',
+    'پینڈنگ': 'pending', 'ٹوٹل': 'total', 'کل': 'total', 'بچے': 'bache', 'طالب علم': 'student',
+    'کی': 'ki', 'کا': 'ka', 'کے': 'ke', 'میں': 'mein', 'ہے': 'hai', 'ہیں': 'hain', 'کو': 'ko',
+    'سے': 'se', 'پر': 'par', 'اور': 'aur', 'والد': 'walid', 'ابو': 'walid', 'باپ': 'walid',
+    'فون': 'phone', 'موبائل': 'mobile', 'نمبر': 'number', 'رابطہ': 'rabta', 'نام': 'naam'
+}
+
+URDU_VERBAL_AMOUNTS = {
+    'پچیس سو': '2500', 'ڈھائی ہزار': '2500', 'دو ہزار': '2000', 'تین ہزار': '3000',
+    'ساڑھے تین ہزار': '3500', 'پینتیس سو': '3500', 'چار ہزار': '4000', 'ساڑھے چار ہزار': '4500',
+    'پینتالیس سو': '4500', 'پانچ ہزار': '5000', 'چھ ہزار': '6000', 'سات ہزار': '7000',
+    'آٹھ ہزار': '8000', 'نو ہزار': '9000', 'دس ہزار': '10000', 'پندرہ سو': '1500',
+    'سولہ سو': '1600', 'سترہ سو': '1700', 'اٹھارہ سو': '1800', 'انیس سو': '1900',
+    'اکیس سو': '2100', 'بائیس سو': '2200', 'تیئیس سو': '2300', 'چوبیس سو': '2400',
+    'چھبیس سو': '2600', 'ستائیس سو': '2700', 'اٹھائیس سو': '2800', 'انتس سو': '2900',
+    'بتیس سو': '3200', 'چوتیس سو': '3400', 'چھتیس سو': '3600', 'اڑتیس سو': '3800'
+}
+
+def transliterate_urdu_name(text):
+    """Converts Urdu Arabic script student name to English Latin letters."""
+    if not text:
+        return text
+    if not any('\u0600' <= ch <= '\u06FF' for ch in text):
+        return text
+    words = text.split()
+    translated_words = []
+    for w in words:
+        clean_w = re.sub(r'[^\u0600-\u06FF]', '', w)
+        if clean_w in URDU_NAME_MAP:
+            translated_words.append(URDU_NAME_MAP[clean_w])
+        else:
+            char_trans = ''.join(URDU_CHAR_MAP.get(c, c) for c in clean_w)
+            translated_words.append(char_trans.title() if char_trans else w)
+    return ' '.join(translated_words)
+
+def transliterate_urdu_to_roman(text):
+    """Converts full Urdu user speech/query into Roman Urdu/English text."""
+    if not text:
+        return text
+    # 1. Verbal amounts
+    for phrase, num in URDU_VERBAL_AMOUNTS.items():
+        text = text.replace(phrase, num)
+    # 2. Digits
+    for u_d, e_d in URDU_DIGITS_MAP.items():
+        text = text.replace(u_d, e_d)
+    # Check if contains Urdu
+    if not any('\u0600' <= ch <= '\u06FF' for ch in text):
+        return text
+    words = text.split()
+    out = []
+    for w in words:
+        clean = re.sub(r'[^\u0600-\u06FF]', '', w)
+        if clean in URDU_NAME_MAP:
+            out.append(URDU_NAME_MAP[clean])
+        elif clean in URDU_WORDS_MAP:
+            out.append(URDU_WORDS_MAP[clean])
+        elif any('\u0600' <= ch <= '\u06FF' for ch in w):
+            char_trans = ''.join(URDU_CHAR_MAP.get(c, c) for c in clean)
+            out.append(char_trans.title() if char_trans else w)
+        else:
+            out.append(w)
+    return ' '.join(out)
+
+# Common spelling variants in Pakistani school software
+NAME_VARIANTS = {
+    'ahmad': ['ahmad', 'ahmed'],
+    'ahmed': ['ahmad', 'ahmed'],
+    'hassan': ['hassan', 'hasan'],
+    'hasan': ['hassan', 'hasan'],
+    'hussain': ['hussain', 'husain'],
+    'husain': ['hussain', 'husain'],
+    'usman': ['usman', 'othman', 'osman'],
+    'fatima': ['fatima', 'fatimah'],
+    'ayesha': ['ayesha', 'aisha'],
+    'aisha': ['ayesha', 'aisha'],
+    'saad': ['saad', "sa'ad"],
+    'naveed': ['naveed', 'navid'],
+    'waseem': ['waseem', 'wasim'],
+    'nadeem': ['nadeem', 'nadim'],
+    'chaudhry': ['chaudhry', 'choudhry', 'chaudhary'],
+    'mehmood': ['mehmood', 'mahmood'],
+    'touseef': ['touseef', 'tauseef'],
+    'shakeel': ['shakeel', 'shakil'],
+    'nafees': ['nafees', 'nafis']
+}
+
 def find_students(query, class_name=None, campus_id=None, limit=8):
-    """Search for students by ID or name, filtered by optional class or campus."""
+    """
+    Search for students by ID or name, filtered by optional class or campus.
+    Fully handles:
+    1. Urdu Arabic script (e.g. 'علی رضا', 'محمد حسن', 'بلال لیاقت')
+    2. Pakistani name transliteration to English Latin script
+    3. 'Muhammad' matching against 'M.' and 'M ' prefixes in database (1,290+ students)
+    4. Common spelling variations (Ahmad/Ahmed, Hassan/Hasan, Usman/Othman, etc.)
+    5. Clean parameterized SQL queries safe from psycopg % formatting bugs
+    6. Intelligent Python-level relevance scoring
+    """
+    if not query:
+        return []
+        
+    query_str = str(query).strip()
+    
+    # 1. Automatic Urdu Script to English Transliteration
+    if any('\u0600' <= ch <= '\u06FF' for ch in query_str):
+        query_str = transliterate_urdu_name(query_str)
+        
     conn = get_db_connection()
     sql = """
         SELECT s.id, s.name, s.father_name, s.class, s.monthly_fee, s.opening_arrears, 
@@ -165,42 +336,81 @@ def find_students(query, class_name=None, campus_id=None, limit=8):
         else:
             sql += " AND (LOWER(s.class) = ? OR LOWER(s.class) LIKE ?)"
             params.extend([class_name.lower(), f"%{class_name.lower()}%"])
-        
-    query_str = str(query).strip()
+            
     if query_str.isdigit():
         sql += " AND (s.id = ? OR CAST(s.id AS TEXT) LIKE ?)"
         params.extend([int(query_str), f"%{query_str}%"])
-    else:
-        # Word search
-        words = query_str.split()
-        for w in words:
-            sql += " AND (LOWER(s.name) LIKE ? OR LOWER(COALESCE(s.father_name, '')) LIKE ?)"
-            params.extend([f"%{w.lower()}%", f"%{w.lower()}%"])
+        sql += " ORDER BY s.name ASC LIMIT ?"
+        params.append(limit)
+        rows = conn.execute(sql, params).fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+        
+    # Word-based name search with Muhammad prefix and spelling variants
+    words = query_str.split()
+    for w in words:
+        w_lower = w.lower().rstrip('.')
+        if w_lower in ('muhammad', 'mohammad', 'mohd', 'm'):
+            sql += " AND (LOWER(s.name) LIKE ? OR LOWER(s.name) LIKE ? OR LOWER(s.name) LIKE ? OR LOWER(COALESCE(s.father_name, '')) LIKE ? OR LOWER(COALESCE(s.father_name, '')) LIKE ?)"
+            params.extend(['m.%', 'm %', '%muhammad%', 'm.%', '%muhammad%'])
+        else:
+            variants = NAME_VARIANTS.get(w_lower, [w_lower])
+            conds = []
+            for var in variants:
+                conds.append("LOWER(s.name) LIKE ?")
+                conds.append("LOWER(COALESCE(s.father_name, '')) LIKE ?")
+                params.extend([f"%{var}%", f"%{var}%"])
+            sql += f" AND ({' OR '.join(conds)})"
             
-    # Rank exact name matches first
-    sql += """ ORDER BY 
-        CASE 
-            WHEN LOWER(s.name) = LOWER(?) THEN 1
-            WHEN LOWER(s.name) LIKE ? THEN 2
-            ELSE 3 
-        END, 
-        s.name ASC LIMIT ?"""
-    params.extend([query_str, f"{query_str.lower()}%", limit])
-    
+    sql += " LIMIT 50"
     rows = conn.execute(sql, params).fetchall()
     conn.close()
     
-    # If any candidate matches all query words strictly in student name, prioritize those!
-    if not query_str.isdigit():
-        q_words = query_str.lower().split()
-        strict_name_matches = [r for r in rows if all(w in r['name'].lower() for w in q_words)]
-        if strict_name_matches:
-            return [dict(r) for r in strict_name_matches]
+    candidates = [dict(r) for r in rows]
+    if not candidates:
+        return []
+        
+    # Intelligent Scoring
+    def score_student(s):
+        score = 0
+        s_name = (s['name'] or '').lower()
+        s_father = (s['father_name'] or '').lower()
+        q_lower = query_str.lower()
+        
+        # Exact name match
+        if s_name == q_lower:
+            score += 100
+        elif s_name.startswith(q_lower):
+            score += 50
             
-    return [dict(r) for r in rows]
+        has_m_query = any(w.lower().rstrip('.') in ('muhammad', 'mohammad', 'mohd', 'm') for w in words)
+        name_starts_with_m = s_name.startswith('m.') or s_name.startswith('m ') or s_name.startswith('muhammad')
+        
+        if has_m_query and name_starts_with_m:
+            score += 35
+        elif has_m_query and not name_starts_with_m:
+            score -= 10
+            
+        for w in words:
+            w_l = w.lower().rstrip('.')
+            if w_l in ('muhammad', 'mohammad', 'mohd', 'm'):
+                continue
+            if w_l in s_name:
+                score += 25
+            elif any(v in s_name for v in NAME_VARIANTS.get(w_l, [])):
+                score += 20
+            elif w_l in s_father:
+                score += 5
+                
+        if s.get('status') == 'active':
+            score += 5
+            
+        return score
+        
+    candidates.sort(key=score_student, reverse=True)
+    return candidates[:limit]
 
 def get_student_fee_status(student_id):
-    """Get detailed fee calculation for a student."""
     from app import get_student_fee_details
     conn = get_db_connection()
     student = conn.execute("""
@@ -435,66 +645,7 @@ def get_classes_summary(campus_id=None):
 # HYBRID INTELLIGENCE: RULE-BASED INTENT PARSER (OFFLINE READY)
 # -------------------------------------------------------------
 
-# Comprehensive Urdu Arabic Script to Roman Urdu Mapping
-URDU_WORD_MAP = {
-    'علی': 'ali', 'رضا': 'raza', 'محمد': 'muhammad', 'احمد': 'ahmad', 'حسن': 'hassan',
-    'حسین': 'hussain', 'عثمان': 'usman', 'حمزہ': 'hamza', 'فاطمہ': 'fatima', 'عائشہ': 'aisha',
-    'زینب': 'zainab', 'طہ': 'taha', 'عبداللہ': 'abdullah', 'بلال': 'bilal', 'عاطف': 'atif',
-    'اسد': 'asad', 'سعد': 'saad', 'عمر': 'umar', 'ابوبکر': 'abubakar', 'طاہر': 'tahir',
-    'فیس': 'fee', 'فیسیں': 'fees', 'کتنی': 'kitni', 'کتنا': 'kitna', 'بتاؤ': 'batao',
-    'بتائیں': 'batao', 'بتایں': 'batao', 'بتا': 'batao', 'دکھاؤ': 'batao', 'دیکھو': 'batao',
-    'چیک': 'check', 'کلاس': 'class', 'جماعت': 'class', 'گریڈ': 'grade',
-    'ایک': 'one', 'دو': 'two', 'تین': 'three', 'چار': 'four', 'پانچ': 'five',
-    'چھ': 'six', 'سات': 'seven', 'آٹھ': 'eight', 'نو': 'nine', 'دس': 'ten',
-    'نرسری': 'nursery', 'پریپ': 'prep', 'کر': 'kar', 'دو': 'do', 'دیں': 'do',
-    'رکھ': 'rakh', 'بدل': 'badal', 'اپڈیٹ': 'update', 'سیٹ': 'set',
-    'ڈیفالٹر': 'defaulter', 'ڈیفالٹرز': 'defaulters', 'بقایا': 'arrears', 'بقایاجات': 'arrears',
-    'پینڈنگ': 'pending', 'ٹوٹل': 'total', 'کل': 'total', 'بچے': 'bache', 'طالب علم': 'student',
-    'کی': 'ki', 'کا': 'ka', 'کے': 'ke', 'میں': 'mein', 'ہے': 'hai', 'ہیں': 'hain', 'کو': 'ko',
-    'سے': 'se', 'پر': 'par', 'اور': 'aur'
-}
 
-URDU_DIGITS_MAP = {
-    '۰': '0', '۱': '1', '۲': '2', '۳': '3', '۴': '4',
-    '۵': '5', '۶': '6', '۷': '7', '۸': '8', '۹': '9'
-}
-
-URDU_CHAR_MAP = {
-    'ا': 'a', 'آ': 'a', 'ب': 'b', 'پ': 'p', 'ت': 't', 'ٹ': 't', 'ث': 's',
-    'ج': 'j', 'چ': 'ch', 'ح': 'h', 'خ': 'kh', 'د': 'd', 'ڈ': 'd', 'ذ': 'z',
-    'ر': 'r', 'ڑ': 'r', 'ز': 'z', 'ژ': 'z', 'س': 's', 'ش': 'sh', 'ص': 's',
-    'ض': 'z', 'ط': 't', 'ظ': 'z', 'ع': 'a', 'غ': 'gh', 'ف': 'f', 'ق': 'q',
-    'ک': 'k', 'گ': 'g', 'ل': 'l', 'م': 'm', 'ن': 'n', 'ں': 'n', 'و': 'o',
-    'ہ': 'h', 'ھ': 'h', 'ء': '', 'ی': 'i', 'ے': 'e'
-}
-
-def transliterate_urdu_to_roman(text):
-    """Converts Urdu Arabic script into Roman Urdu/English text."""
-    if not text:
-        return text
-    # Replace Urdu digits
-    for u_dig, e_dig in URDU_DIGITS_MAP.items():
-        text = text.replace(u_dig, e_dig)
-    
-    # Check if text contains Arabic/Urdu characters
-    has_urdu = any('\u0600' <= ch <= '\u06FF' for ch in text)
-    if not has_urdu:
-        return text
-        
-    words = text.split()
-    output_words = []
-    for w in words:
-        clean_w = re.sub(r'[^\u0600-\u06FFa-zA-Z0-9]', '', w)
-        if clean_w in URDU_WORD_MAP:
-            output_words.append(URDU_WORD_MAP[clean_w])
-        elif any('\u0600' <= ch <= '\u06FF' for ch in w):
-            # Phonetic character transliteration
-            roman = ''.join(URDU_CHAR_MAP.get(ch, ch) for ch in w)
-            output_words.append(roman)
-        else:
-            output_words.append(w)
-            
-    return ' '.join(output_words)
 
 def parse_with_rule_engine(message, campus_id=None, user_session=None, history=None):
     if not message or not message.strip():
@@ -703,9 +854,9 @@ def parse_with_rule_engine(message, campus_id=None, user_session=None, history=N
 
     # 7. Update Student Fee
     # e.g.: "Ali ki fee 4500 kar do", "Class 2 ke Ali Raza ki fee 3000 kar do", "ID 4042 fee 2000 set karo"
-    is_update_intent = ('kar do' in raw or any(k in raw for k in ['update', 'set', 'change', 'badal', 'rakh'])) and any(c.isdigit() for c in msg)
+    is_update_intent = ('kar do' in raw or any(k in raw for k in ['update', 'set', 'change', 'badal', 'rakh'])) and any(c.isdigit() for c in raw)
     if is_update_intent:
-        all_numbers = [int(n) for n in re.findall(r'\b\d+\b', msg)]
+        all_numbers = [int(n) for n in re.findall(r'\b\d+\b', raw)]
         new_amount = None
         target_student_id = explicit_id
 
@@ -861,11 +1012,11 @@ def parse_with_rule_engine(message, campus_id=None, user_session=None, history=N
 GEMINI_TOOLS_DECLARATION = [
     {
         "name": "find_students",
-        "description": "Find and search students by name, ID, or class.",
+        "description": "Find and search students by name, ID, or class. IMPORTANT: All student names, father names, and classes in the database are stored in English/Latin letters (e.g. 'Ali Raza', 'M. Hassan', 'Bilal Liaqat', 'Fatima', 'Class 2'). If the user speaks or writes in Urdu script (e.g. 'علی رضا', 'محمد حسن', 'بلال لیاقت', 'فاطمہ'), transliterate the student name into English letters in the query parameter (e.g. query='Ali Raza', query='Muhammad Hassan', query='Bilal Liaqat').",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "query": {"type": "STRING", "description": "Student name or ID to search for."},
+                "query": {"type": "STRING", "description": "Student name in English Latin letters (e.g. 'Ali Raza', 'Muhammad Hassan', 'Bilal Liaqat') or numeric student ID."},
                 "class_name": {"type": "STRING", "description": "Optional class name or grade e.g. 'Class 5', 'Nursery', '10'."}
             },
             "required": ["query"]
@@ -925,9 +1076,16 @@ GEMINI_TOOLS_DECLARATION = [
 SYSTEM_INSTRUCTION = """You are the intelligent School Admin AI Copilot for Alliedian School Management System.
 You assist school operators, principals, and accountants with everything: students, fees, arrears, vouchers, campus stats, advice, and general conversation.
 Language & Tone:
-- You understand and speak fluent Roman Urdu, Urdu, and English naturally, just like ChatGPT/Antigravity.
-- Understand all Pakistani Roman Urdu slang, informal phrasing, and typos (e.g. 'esy work ni krta', 'kya hal he', 'batao', 'tbtao', 'kr do', 'ma he', 'mujhe samjhao').
+- You understand and speak fluent Urdu, Roman Urdu, and English naturally, just like ChatGPT/Antigravity.
+- Understand all Pakistani Urdu and Roman Urdu slang, informal phrasing, and typos (e.g. 'esy work ni krta', 'kya hal he', 'batao', 'tbtao', 'kr do', 'ma he', 'mujhe samjhao').
 - Always be polite, warm, and highly intelligent. Use Pakistani currency formatting (e.g., Rs. 4,500).
+
+Urdu Voice & Script Transliteration:
+- CRITICAL DATABASE RULE: All student names in the school database are stored in English Latin letters (e.g. 'Ali Raza', 'M. Hassan', 'Fatima', 'Bilal Liaqat', 'Play Group').
+- When the user speaks or writes in Urdu script (e.g., 'علی رضا کی فیس کتنی ہے' or 'محمد حسن کا ریکارڈ دکھاؤ' or 'بلال کی فیس ۲۵۰۰ کر دو'):
+  1. Transliterate all Urdu student names into English Latin script when calling tools (e.g. query='Ali Raza', query='Muhammad Hassan', query='Bilal Liaqat').
+  2. Note that 'محمد' is often recorded as 'M.' or 'M ' in student names (e.g. 'M. Hassan', 'M. Ahmad').
+  3. You can reply back to the user in fluent Urdu, Roman Urdu, or English matching the user's conversational language!
 
 Capabilities:
 1. Conversational & General Help: You can answer ANY question, general queries, school advice, guidance on how to manage admissions, fees, accounting, or casual chat.
@@ -989,7 +1147,7 @@ def call_gemini_api(api_key, user_message, campus_id=None, history=None, user_se
         
         try:
             req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers=headers, method='POST')
-            with urllib.request.urlopen(req, timeout=6.5) as response:
+            with urllib.request.urlopen(req, timeout=3.5) as response:
                 res_data = json.loads(response.read().decode('utf-8'))
                 candidates = res_data.get('candidates', [])
                 if not candidates:
@@ -1144,7 +1302,7 @@ def call_gemini_api(api_key, user_message, campus_id=None, history=None, user_se
             continue
             
     # If all models failed, short cooldown (15s) so rule engine handles immediate repeat, but Gemini re-attempts soon
-    _GEMINI_COOLDOWN_UNTIL = datetime.now().timestamp() + 15
+    _GEMINI_COOLDOWN_UNTIL = datetime.now().timestamp() + 30
     return None
 
 # -------------------------------------------------------------

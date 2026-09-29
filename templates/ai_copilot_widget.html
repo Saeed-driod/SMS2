@@ -526,6 +526,20 @@ body:not(:has(.app-sidebar)) .ai-copilot-drawer {
     0%, 80%, 100% { transform: scale(0); }
     40% { transform: scale(1); }
 }
+
+.ai-bubble-urdu {
+    font-family: 'Noto Nastaliq Urdu', 'Urdu Typesetting', 'Jameel Noori Nastaleeq', 'Segoe UI', Tahoma, sans-serif !important;
+    text-align: right !important;
+    line-height: 1.8 !important;
+    direction: rtl !important;
+    font-size: 0.95rem !important;
+}
+
+.ai-input-field.urdu-font {
+    font-family: 'Noto Nastaliq Urdu', 'Urdu Typesetting', 'Jameel Noori Nastaleeq', 'Segoe UI', Tahoma, sans-serif !important;
+    text-align: right !important;
+    direction: rtl !important;
+}
 </style>
 
 <!-- AI Copilot Interactivity Script -->
@@ -720,6 +734,10 @@ body:not(:has(.app-sidebar)) .ai-copilot-drawer {
 
         const bubble = document.createElement('div');
         bubble.className = 'ai-msg-bubble';
+        if (/[\u0600-\u06FF]/.test(htmlContent)) {
+            bubble.classList.add('ai-bubble-urdu');
+            bubble.setAttribute('dir', 'rtl');
+        }
         bubble.innerHTML = htmlContent;
 
         // Render Action Confirmation Card if proposed
@@ -853,6 +871,13 @@ body:not(:has(.app-sidebar)) .ai-copilot-drawer {
         });
     }
 
+    chatInput.addEventListener('input', () => {
+        const hasUrdu = /[\u0600-\u06FF]/.test(chatInput.value);
+        chatInput.setAttribute('dir', hasUrdu ? 'rtl' : 'ltr');
+        if (hasUrdu) chatInput.classList.add('urdu-font');
+        else chatInput.classList.remove('urdu-font');
+    });
+
     chatForm.addEventListener('submit', (e) => {
         e.preventDefault();
         if (voiceSendTimer) {
@@ -861,6 +886,8 @@ body:not(:has(.app-sidebar)) .ai-copilot-drawer {
         }
         const text = chatInput.value;
         chatInput.value = '';
+        chatInput.setAttribute('dir', 'ltr');
+        chatInput.classList.remove('urdu-font');
         sendMessage(text);
     });
 
@@ -914,6 +941,10 @@ body:not(:has(.app-sidebar)) .ai-copilot-drawer {
         recognition.onresult = (event) => {
             const transcript = event.results[0][0].transcript;
             chatInput.value = transcript;
+            const hasUrdu = /[\u0600-\u06FF]/.test(transcript);
+            chatInput.setAttribute('dir', hasUrdu ? 'rtl' : 'ltr');
+            if (hasUrdu) chatInput.classList.add('urdu-font');
+            else chatInput.classList.remove('urdu-font');
             if (voiceStatusText) {
                 voiceStatusText.textContent = `Pehchan liya: "${transcript}" (Bhej raha hoon...)`;
             }
