@@ -169,3 +169,41 @@ function initStudentSearch(inputId, listId, selectId) {
         suggestions.classList.remove('d-none');
     }
 }
+
+
+// Mobile Navigation Drawer Toggle Logic
+document.addEventListener('DOMContentLoaded', function() {
+    const sidebar = document.getElementById('appSidebar');
+    const backdrop = document.getElementById('sidebarBackdrop');
+    const toggleBtn = document.getElementById('mobileSidebarToggle');
+    const bottomMenuBtn = document.getElementById('mobileBottomMenuTrigger');
+    const closeBtn = document.getElementById('mobileSidebarClose');
+
+    function openMobileMenu() {
+        if (sidebar) sidebar.classList.add('show');
+        if (backdrop) backdrop.classList.add('show');
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closeMobileMenu() {
+        if (sidebar) sidebar.classList.remove('show');
+        if (backdrop) backdrop.classList.remove('show');
+        document.body.style.overflow = '';
+    }
+
+    if (toggleBtn) toggleBtn.addEventListener('click', openMobileMenu);
+    if (bottomMenuBtn) bottomMenuBtn.addEventListener('click', openMobileMenu);
+    if (closeBtn) closeBtn.addEventListener('click', closeMobileMenu);
+    if (backdrop) backdrop.addEventListener('click', closeMobileMenu);
+
+    // Close drawer when a navigation link inside sidebar is clicked
+    if (sidebar) {
+        sidebar.querySelectorAll('.nav-link').forEach(function(link) {
+            link.addEventListener('click', function() {
+                if (window.innerWidth <= 992) {
+                    closeMobileMenu();
+                }
+            });
+        });
+    }
+});

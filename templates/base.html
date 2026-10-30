@@ -21,13 +21,19 @@
     <!-- App Layout Structure -->
     {% if session.logged_in %}
     <div class="app-layout">
+        <!-- Sidebar Backdrop for Mobile Drawer -->
+        <div class="sidebar-backdrop d-lg-none" id="sidebarBackdrop"></div>
+
         <!-- Sidebar -->
-        <aside class="app-sidebar no-print">
-            <div class="sidebar-header">
+        <aside class="app-sidebar no-print" id="appSidebar">
+            <div class="sidebar-header d-flex align-items-center justify-content-between">
                 <div class="logo-area">
                     <i class="fa-solid fa-graduation-cap logo-icon"></i>
                     <div class="logo-text">ALLIEDIAN</div>
                 </div>
+                <button type="button" class="btn-close-sidebar d-lg-none" id="mobileSidebarClose" aria-label="Close sidebar">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
             </div>
             <nav class="sidebar-nav">
                 <div class="nav-section-title">Main Navigation</div>
@@ -121,8 +127,17 @@
         
         <!-- Main Content Area -->
         <div class="app-main-content">
-            <!-- App Topbar: Horizontal Search, Campus Selector, User Profile -->
+            <!-- App Topbar: Navigation, Search, Campus Selector, User Profile -->
             <header class="app-topbar no-print">
+                <div class="topbar-left-nav d-flex align-items-center gap-2">
+                    <button type="button" class="btn btn-topbar-icon d-lg-none" id="mobileSidebarToggle" aria-label="Toggle menu" title="Open Navigation Drawer">
+                        <i class="fa-solid fa-bars"></i>
+                    </button>
+                    <a href="{{ url_for('dashboard') }}" class="btn btn-topbar-home {% if request.path == '/' %}active{% endif %}" title="Dashboard / Home">
+                        <i class="fa-solid fa-house"></i>
+                        <span class="d-none d-sm-inline ms-1.5 fw-semibold">Home</span>
+                    </a>
+                </div>
                 <div class="topbar-search">
                     <form action="{{ url_for('students_view') }}" method="GET" class="search-form-global position-relative">
                         <i class="fa-solid fa-magnifying-glass search-icon"></i>
@@ -215,6 +230,31 @@
             </main>
         </div>
     </div>
+
+    <!-- Mobile Bottom Navigation Bar (Thumb-friendly quick navigation) -->
+    <nav class="mobile-bottom-nav d-lg-none no-print">
+        <a href="{{ url_for('dashboard') }}" class="bottom-nav-item {% if request.path == '/' %}active{% endif %}">
+            <i class="fa-solid fa-house"></i>
+            <span>Home</span>
+        </a>
+        <a href="{{ url_for('students_view') }}" class="bottom-nav-item {% if request.path == '/students' or request.path.startswith('/students/edit') or request.path.startswith('/students/add') %}active{% endif %}">
+            <i class="fa-solid fa-user-graduate"></i>
+            <span>Students</span>
+        </a>
+        <a href="{{ url_for('class_fee_sheet') }}" class="bottom-nav-item {% if '/fee/class-sheet' in request.path %}active{% endif %}">
+            <i class="fa-solid fa-table-list"></i>
+            <span>Register</span>
+        </a>
+        <a href="{{ url_for('voucher_generate') }}" class="bottom-nav-item {% if '/voucher' in request.path %}active{% endif %}">
+            <i class="fa-solid fa-file-invoice-dollar"></i>
+            <span>Vouchers</span>
+        </a>
+        <button type="button" class="bottom-nav-item bottom-nav-btn" id="mobileBottomMenuTrigger" aria-label="Open Full Navigation Drawer">
+            <i class="fa-solid fa-bars"></i>
+            <span>Menu</span>
+        </button>
+    </nav>
+
     <!-- AI Copilot Assistant Widget -->
     {% include 'ai_copilot_widget.html' %}
     {% else %}
